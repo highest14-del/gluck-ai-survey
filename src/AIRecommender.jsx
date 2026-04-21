@@ -40,7 +40,9 @@ function loadLocal() {
       q2: r.q2 || '',
       q3: r.q3 || '',
       q4: r.q4 || '',
+      q4Limit: r.q4Limit || '',
       q5: r.q5 || '',
+      q5Payment: r.q5Payment || '',
       q6: r.q6 || '',
       ai: r.recommendedAi || r.ai || '',
       tier: r.recommendedTier || r.tier || '',
@@ -130,11 +132,15 @@ const QUESTIONS = {
     hint: '해당되는 것 모두 선택해주세요',
     multi: true,
     options: [
-      { value: 'coding',   label: '코딩 및 개발',                       desc: '웹, 앱, 데이터 분석' },
-      { value: 'writing',  label: '긴 문서 작성 및 전문 글쓰기',          desc: '보고서, 기획서' },
-      { value: 'general',  label: '일상 질문, 번역, 아이디어 브레인스토밍', desc: '가벼운 활용' },
-      { value: 'image',    label: '이미지/영상 생성 및 디자인',           desc: '비주얼 콘텐츠 제작' },
-      { value: 'research', label: '학술 연구, 논문 검토',                desc: '심층 자료 분석' },
+      { value: 'coding',        label: '코딩 및 개발',                  desc: '웹, 앱, 데이터 분석' },
+      { value: 'writing',       label: '긴 문서 작성 및 전문 글쓰기',     desc: '보고서, 기획서' },
+      { value: 'general',       label: '일상 질문, 번역, 브레인스토밍',   desc: '가벼운 활용' },
+      { value: 'image',         label: '이미지/영상 생성 및 디자인',      desc: '비주얼 콘텐츠 제작' },
+      { value: 'research',      label: '학술 연구, 논문 검토',           desc: '심층 자료 분석' },
+      { value: 'communication', label: '커뮤니케이션·고객 응대',          desc: '메일, 카톡, CS' },
+      { value: 'planning',      label: '기획·전략·마케팅',               desc: '아이디어 정리, 캠페인 기획' },
+      { value: 'analysis',      label: '데이터 분석·엑셀 작업',           desc: '수치 정리, 보고용 차트' },
+      { value: 'other',         label: '기타',                          desc: '직접 입력' },
     ],
   },
   q2: {
@@ -170,6 +176,17 @@ const QUESTIONS = {
       { value: 'never',   label: '아직 본격적으로 써본 적 없어요',           desc: '입문 단계' },
     ],
   },
+  // Q5 결제 방식 후속 질문 — 유료 도구 사용 시 노출
+  q5Payment: {
+    label: '구독료는 어떻게 결제하고 계신가요?',
+    options: [
+      { value: 'personal', label: '전부 개인 결제',          desc: '내 카드로 직접' },
+      { value: 'company',  label: '전부 회사 결제',          desc: '법인카드/지원' },
+      { value: 'mixed',    label: '일부 개인, 일부 회사',    desc: '도구별로 다름' },
+      { value: 'na',       label: '무료 도구만 쓰는 중',     desc: '결제 없음' },
+    ],
+  },
+
   // Q4 한도 부족 후속 질문 — Q4에 'limit' 체크 시 노출
   q4Limit: {
     label: '한도가 얼마나 부족하신가요?',
@@ -203,9 +220,12 @@ const QUESTIONS = {
 function pickPrimary(q1Array) {
   const arr = Array.isArray(q1Array) ? q1Array : q1Array ? [q1Array] : [];
   if (arr.includes('coding')) return 'coding';
-  if (arr.includes('research')) return 'research';
-  if (arr.includes('writing')) return 'writing';
+  // analysis는 research와 같은 도구군 (Perplexity·Claude)
+  if (arr.includes('research') || arr.includes('analysis')) return 'research';
+  // planning은 writing과 같은 도구군 (Claude·ChatGPT)
+  if (arr.includes('writing') || arr.includes('planning')) return 'writing';
   if (arr.includes('image')) return 'image';
+  // communication, general, other는 범용 도구군
   return 'general';
 }
 
@@ -532,7 +552,10 @@ function getMaturity(answers) {
   score += q2Map[answers.q2] || 0;
 
   // Q1 (array) — 용도 중 가장 높은 점수만 반영
-  const q1ScoreMap = { coding: 15, research: 15, writing: 10, image: 8, general: 5 };
+  const q1ScoreMap = {
+    coding: 15, research: 15, analysis: 13, planning: 12, writing: 10,
+    image: 8, communication: 7, general: 5, other: 8,
+  };
   const q1Arr = toArr(answers.q1);
   const q1Max = q1Arr.reduce((m, v) => Math.max(m, q1ScoreMap[v] || 0), 0);
   score += q1Max;
@@ -883,7 +906,7 @@ function SurveyMode() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({
     name: '', team: '', role: '',
-    q1: [], q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q6: '',
+    q1: [], q1Other: '', q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q5Payment: '', q6: '',
   });
   const [result, setResult] = useState(null);
 
@@ -913,11 +936,12 @@ function SurveyMode() {
       name: answers.name,
       team: answers.team,
       role: answers.role || '',
-      q1: toArr(answers.q1).join(', '),
+      q1: toArr(answers.q1).map((v) => v === 'other' && answers.q1Other ? `기타(${answers.q1Other})` : v).join(', '),
       q2: answers.q2, q3: answers.q3,
       q4: toArr(answers.q4).join(', '),
       q4Limit: answers.q4Limit || '',
       q5: toArr(answers.q5).map((v) => v === 'other' && answers.q5Other ? `기타(${answers.q5Other})` : v).join(', '),
+      q5Payment: answers.q5Payment || '',
       q6: answers.q6,
       recommendedAi: rec.ai,
       recommendedTier: rec.tier,
@@ -973,6 +997,10 @@ function SurveyMode() {
             <MultiQuestionStep
               num="Q1" question={QUESTIONS.q1}
               values={answers.q1} onChange={(v) => setField('q1', v)}
+              otherValue="other"
+              otherText={answers.q1Other}
+              onOtherChange={(v) => setField('q1Other', v)}
+              otherPlaceholder="예: 영상 편집, 이메일 자동화, 음악 생성 등"
               onNext={next} onPrev={prev}
             />
           )}
@@ -1005,13 +1033,16 @@ function SurveyMode() {
               otherText={answers.q5Other}
               onOtherChange={(v) => setField('q5Other', v)}
               otherPlaceholder="예: Notion AI, Suno, ElevenLabs 등"
+              paymentQuestion={QUESTIONS.q5Payment}
+              paymentSelected={answers.q5Payment}
+              onPaymentChange={(v) => setField('q5Payment', v)}
               onNext={next} onPrev={prev}
             />
           )}
           {step === 8 && (
             <Q6Step value={answers.q6} onChange={(v) => setField('q6', v)} onSubmit={next} onPrev={prev} />
           )}
-          {step === 9 && <LoadingStep name={answers.name} />}
+          {step === 9 && <LoadingStep name={answers.name} role={answers.role} />}
           {step === 10 && result && <ResultStep answers={answers} result={result} onRestart={restart} />}
         </div>
       </div>
@@ -1210,11 +1241,14 @@ function MultiQuestionStep({
   num, question, values, onChange, onNext, onPrev,
   otherValue, otherText, onOtherChange, otherPlaceholder,
   followValue, followQuestion, followSelected, onFollowChange,
+  paymentQuestion, paymentSelected, onPaymentChange,
 }) {
   const current = Array.isArray(values) ? values : [];
   const exclusive = question.exclusive || [];
   const showOther = otherValue && current.includes(otherValue);
   const showFollow = followValue && followQuestion && current.includes(followValue);
+  // 결제 follow-up: 선택값이 있고 배타적 옵션('none')만 고른 게 아니면 표시
+  const showPayment = paymentQuestion && current.length > 0 && current.some((v) => !exclusive.includes(v));
 
   const toggle = (v) => {
     let next;
@@ -1232,7 +1266,8 @@ function MultiQuestionStep({
 
   const ok = current.length > 0
     && (!showOther || (otherText || '').trim().length > 0)
-    && (!showFollow || !!followSelected);
+    && (!showFollow || !!followSelected)
+    && (!showPayment || !!paymentSelected);
 
   return (
     <div>
@@ -1302,6 +1337,31 @@ function MultiQuestionStep({
         </div>
       )}
 
+      {showPayment && (
+        <div className="mt-4 p-5 rounded-2xl bg-indigo-50 border border-indigo-200 anim-fade-in">
+          <div className="text-sm font-bold text-indigo-900 mb-1 flex items-center gap-1.5">
+            💳 {paymentQuestion.label} <span className="text-rose-500">*</span>
+          </div>
+          <div className="text-xs text-indigo-800/80 mb-3">개인 부담 비율을 파악해 회사 지원 범위를 정하는 데 활용됩니다.</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {paymentQuestion.options.map((opt) => {
+              const sel = paymentSelected === opt.value;
+              return (
+                <button key={opt.value} onClick={() => onPaymentChange(opt.value)}
+                  className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-all ${
+                    sel
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                      : 'bg-white text-slate-700 border-indigo-200 hover:border-indigo-400 hover:-translate-y-0.5'
+                  }`}>
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className={`text-[10px] mt-0.5 ${sel ? 'text-white/80' : 'text-slate-500'}`}>{opt.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-3 mt-8">
         <button onClick={onPrev} className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
           <ArrowLeft size={16} /> 이전
@@ -1352,7 +1412,8 @@ function Q6Step({ value, onChange, onSubmit, onPrev }) {
 }
 
 // ---------- 로딩 ----------
-function LoadingStep({ name }) {
+function LoadingStep({ name, role }) {
+  const display = role ? `${name} ${role}` : name;
   return (
     <div className="text-center py-20">
       <div className="inline-flex gap-1.5 mb-8">
@@ -1361,7 +1422,7 @@ function LoadingStep({ name }) {
         <span className="w-3 h-3 rounded-full bg-slate-900 animate-bounce" style={{ animationDelay: '300ms' }} />
       </div>
       <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
-        {name}님께 딱 맞는 AI를 찾고 있어요
+        {display}님께 딱 맞는 AI를 찾고 있어요
       </h2>
       <p className="text-sm text-slate-500">잠시만 기다려주세요…</p>
     </div>
@@ -1393,7 +1454,9 @@ function ResultStep({ answers, result, onRestart }) {
     <div className="space-y-5 pb-12">
       <div>
         <div className="flex items-center gap-2 flex-wrap mb-2">
-          <h1 className="text-xl font-bold text-slate-900">{answers.name}님의 진단 결과</h1>
+          <h1 className="text-xl font-bold text-slate-900">
+            {answers.name}{answers.role ? ` ${answers.role}` : ''}님의 진단 결과
+          </h1>
           <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
             {answers.team}{answers.role ? ` · ${answers.role}` : ''}
           </span>
@@ -1663,7 +1726,12 @@ function teamGrade(avg) {
     comment: 'AI 도입을 확대할 수 있는 팀입니다. 무료 버전부터 업무에 맞춰 점진적으로 도입해보면 좋습니다.' };
 }
 
-const Q1_LABEL = { coding: '코딩 및 개발', writing: '문서 작성', general: '일상 사용', image: '이미지 생성', research: '학술 연구' };
+const Q1_LABEL = {
+  coding: '코딩 및 개발', writing: '문서 작성', general: '일상 사용',
+  image: '이미지 생성', research: '학술 연구',
+  communication: '커뮤니케이션·CS', planning: '기획·전략', analysis: '데이터 분석',
+  other: '기타',
+};
 const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', none: '부족함 없음', never: '미사용' };
 
 // 티어별 비용 (USD/월)
@@ -1820,6 +1888,13 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
     } else {
       items.forEach((item) => { q4Map[item] = (q4Map[item] || 0) + 1; });
     }
+  });
+
+  // Q5 결제 방식 분포
+  const paymentMap = {};
+  data.forEach((d) => {
+    const k = d.q5Payment || 'unknown';
+    paymentMap[k] = (paymentMap[k] || 0) + 1;
   });
 
   // 추천 티어 분포
@@ -2156,6 +2231,10 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
           </div>
         </Section>
 
+        <Section title="구독료 결제 방식 분포" icon={<AlertCircle size={20} />}>
+          <PaymentDistribution data={data} paymentMap={paymentMap} total={total} byTeam={byTeam} teams={teams} />
+        </Section>
+
         <Section title="주관식 답변 모아보기" icon={<FileText size={20} />}>
           <div className="space-y-6">
             {teams.map((t) => (
@@ -2177,6 +2256,111 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
             ))}
           </div>
         </Section>
+      </div>
+    </div>
+  );
+}
+
+const PAYMENT_LABEL = {
+  personal: '개인 결제',
+  company:  '회사 결제',
+  mixed:    '개인·회사 혼합',
+  na:       '무료 도구만 사용',
+  unknown:  '미응답',
+};
+const PAYMENT_COLOR = {
+  personal: 'bg-rose-500',
+  company:  'bg-emerald-500',
+  mixed:    'bg-amber-500',
+  na:       'bg-slate-400',
+  unknown:  'bg-slate-200',
+};
+
+function PaymentDistribution({ data, paymentMap, total, byTeam, teams }) {
+  const personalCount = paymentMap.personal || 0;
+  const companyCount = paymentMap.company || 0;
+  const mixedCount = paymentMap.mixed || 0;
+  const personalShare = personalCount + mixedCount * 0.5;  // mixed는 절반만 개인 부담으로 계산
+  const personalPct = total ? Math.round((personalShare / total) * 100) : 0;
+
+  return (
+    <div className="space-y-4">
+      {/* 전사 결제 방식 분포 */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+        <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+          <h3 className="text-sm font-bold text-slate-900">전사 결제 방식</h3>
+          <div className="text-xs">
+            <span className="font-semibold text-rose-600">개인 부담 추정 {personalPct}%</span>
+            <span className="text-slate-400"> · 개인 {personalCount} / 혼합 {mixedCount} / 회사 {companyCount}</span>
+          </div>
+        </div>
+
+        {/* 비율 바 */}
+        <div className="flex h-10 rounded-lg overflow-hidden border border-slate-200 mb-3">
+          {Object.entries(paymentMap).sort((a, b) => {
+            const order = { personal: 0, mixed: 1, company: 2, na: 3, unknown: 4 };
+            return (order[a[0]] ?? 5) - (order[b[0]] ?? 5);
+          }).map(([k, v]) => (
+            <div
+              key={k}
+              className={`${PAYMENT_COLOR[k] || 'bg-slate-300'} grid place-items-center text-[10px] text-white font-semibold`}
+              style={{ flex: v }}
+              title={`${PAYMENT_LABEL[k] || k} ${v}명`}
+            >
+              {v >= Math.ceil(total * 0.08) ? `${PAYMENT_LABEL[k] || k} ${v}` : v}
+            </div>
+          ))}
+        </div>
+
+        {/* 세부 리스트 */}
+        <div className="space-y-2">
+          {Object.entries(paymentMap).sort((a, b) => b[1] - a[1]).map(([k, v]) => {
+            const pct = total ? (v / total) * 100 : 0;
+            return (
+              <div key={k} className="flex items-center gap-3 text-xs">
+                <span className={`w-2 h-2 rounded-full ${PAYMENT_COLOR[k] || 'bg-slate-300'}`} />
+                <span className="font-medium text-slate-700 w-32">{PAYMENT_LABEL[k] || k}</span>
+                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className={`h-full ${PAYMENT_COLOR[k] || 'bg-slate-300'} rounded-full`} style={{ width: `${pct}%` }} />
+                </div>
+                <span className="text-slate-500 tabular-nums w-20 text-right">{v}명 ({pct.toFixed(0)}%)</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600 leading-relaxed">
+          💡 <b>개인 부담 비율이 높을수록</b> 회사 차원의 지원이 필요하다는 신호입니다.
+          {personalPct >= 40 && (
+            <span className="text-rose-700 font-semibold"> 현재 개인 부담이 {personalPct}%로 높은 편 — 회사 예산 배정 검토를 권장합니다.</span>
+          )}
+        </div>
+      </div>
+
+      {/* 팀별 개인 결제 비율 */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+        <h3 className="text-sm font-bold text-slate-900 mb-4">팀별 개인 결제 비율</h3>
+        <div className="space-y-2.5">
+          {teams.map((t) => {
+            const members = byTeam[t];
+            const tCount = members.length;
+            const tPersonal = members.filter((m) => m.q5Payment === 'personal').length;
+            const tMixed = members.filter((m) => m.q5Payment === 'mixed').length;
+            const tShare = tPersonal + tMixed * 0.5;
+            const tPct = tCount ? Math.round((tShare / tCount) * 100) : 0;
+            return (
+              <div key={t} className="flex items-center gap-3 text-xs">
+                <span className="font-medium text-slate-700 w-24">{t}</span>
+                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${tPct >= 50 ? 'bg-rose-500' : tPct >= 25 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${tPct}%` }} />
+                </div>
+                <span className="text-slate-500 tabular-nums w-28 text-right">
+                  {tPersonal + tMixed}/{tCount}명 · {tPct}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
