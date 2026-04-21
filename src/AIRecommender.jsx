@@ -340,6 +340,18 @@ function getRecommendation(answers) {
   const currentAis = toArr(answers.q5);
   const has = (a) => currentAis.includes(a);
 
+  // 메인으로 쓰는 도구 식별 (우선순위: claude > chatgpt > gemini > perplexity)
+  // 이미 잘 쓰는 도구를 존중해서 추천
+  const mainTool = has('claude') ? 'claude'
+    : has('chatgpt') ? 'chatgpt'
+    : has('gemini') ? 'gemini'
+    : has('perplexity') ? 'perplexity'
+    : null;
+
+  // 다양성: Q1 용도 3개 이상이면 "여러 영역 사용자" → 조합 추천
+  const q1Count = toArr(answers.q1).filter((v) => v !== 'other').length;
+  const isVaried = q1Count >= 3;
+
   // ---------- 티어 결정 ----------
   // 원칙:
   //  1. heavy/regular(매일 2시간+) 사용자는 무조건 Pro 이상
@@ -475,7 +487,72 @@ function getRecommendation(answers) {
   }
 
   // ---------- Pro ----------
+  // 다양한 용도(3+)를 다루시는 분은 조합 추천 — 이미 쓰는 메인 도구 존중
+  if (isVaried) {
+    if (mainTool === 'claude') {
+      return rec(
+        'Claude Pro + ChatGPT Plus', '⚡', 'pro', 180000,
+        `Claude를 메인으로 잘 쓰고 계시니 Pro 업그레이드가 가장 자연스럽습니다. 여러 용도(${q1Count}가지)를 다루시는 만큼 ChatGPT Plus(DALL·E·GPTs·음성)를 보조로 조합하면 영역별 강점을 모두 활용할 수 있습니다. ${TAIL}`,
+        ['Claude Pro', 'ChatGPT Plus'],
+      );
+    }
+    if (mainTool === 'chatgpt') {
+      return rec(
+        'ChatGPT Plus + Claude Pro', '⚡', 'pro', 180000,
+        `ChatGPT를 메인으로 잘 쓰고 계시니 Plus 업그레이드가 자연스럽습니다. 여러 용도(${q1Count}가지)를 다루시는 만큼 Claude Pro(긴 문서·추론·한국어 글쓰기)를 보조로 조합하면 시너지가 큽니다. ${TAIL}`,
+        ['ChatGPT Plus', 'Claude Pro'],
+      );
+    }
+    if (mainTool === 'gemini') {
+      return rec(
+        'Gemini Advanced + Claude Pro', '⚡', 'pro', 180000,
+        `Gemini를 메인으로 쓰고 계시니 Advanced(2M 컨텍스트·Workspace 연동)를 유지하시고, Claude Pro(추론·코딩·긴 한국어 문서)를 추가하면 여러 용도(${q1Count}가지)를 효율적으로 커버할 수 있습니다. ${TAIL}`,
+        ['Gemini Advanced', 'Claude Pro'],
+      );
+    }
+    // 메인 도구가 아직 없는 경우
+    return rec(
+      'Claude Pro + ChatGPT Plus', '⚡', 'pro', 180000,
+      `여러 용도(${q1Count}가지)를 다양하게 활용하시니 각 영역에 강점이 다른 두 도구를 조합하는 게 가장 실용적입니다. ${TAIL}`,
+      ['Claude Pro', 'ChatGPT Plus'],
+    );
+  }
+
+  // 단일 용도 중심 — 메인 도구 우선
   if (primary === 'coding') {
+    // 이미 Cursor를 쓰고 있다면 Cursor Pro 추천
+    if (has('cursor') && isLongVol && (heavyUsage || dailyUsage)) {
+      return rec(
+        'Cursor Pro', '⌨️', 'pro', 180000,
+        `이미 Cursor를 쓰고 계시니 Pro 업그레이드가 가장 자연스럽습니다. 백엔드로 Claude·GPT-5를 함께 활용할 수 있어 모델 유연성도 확보됩니다. ${TAIL}`,
+        ['Cursor Pro'],
+      );
+    }
+    // Claude를 쓰면 Claude Pro 우선. 대규모 코드베이스면 Cursor 병행 제안
+    if (mainTool === 'claude') {
+      if (isLongVol && heavyUsage) {
+        return rec(
+          'Claude Pro (필요 시 Cursor Pro 병행)', '⚡', 'pro', 180000,
+          `이미 Claude를 잘 쓰고 계시니 Pro 업그레이드가 최우선입니다. 대규모 코드베이스 작업이 많아지면 Cursor Pro를 추가 도입해 IDE 안에서 같은 Claude 모델을 더 빠르게 쓸 수 있습니다. ${TAIL}`,
+          ['Claude Pro'],
+          'Cursor Pro는 Claude·GPT-5를 백엔드로 선택 가능한 IDE 통합 도구입니다',
+        );
+      }
+      return rec(
+        'Claude Pro', '⚡', 'pro', 180000,
+        `${painLabel}을 고려하면 이미 쓰고 계신 Claude를 Pro로 올리는 것이 가장 자연스럽습니다. 2026년 기준 코딩 문맥 파악에서 압도적입니다. ${TAIL}`,
+        ['Claude Pro'],
+      );
+    }
+    // ChatGPT 메인 사용자
+    if (mainTool === 'chatgpt') {
+      return rec(
+        'ChatGPT Plus + Claude Pro 검토', '⚡', 'pro', 180000,
+        `이미 ChatGPT를 잘 쓰시니 Plus 업그레이드가 우선입니다. 코딩 퀄리티가 아쉽다면 Claude Pro를 추가로 써보세요 — 코드 이해력에서 차이가 납니다. ${TAIL}`,
+        ['ChatGPT Plus', 'Claude Pro'],
+      );
+    }
+    // 새로 시작하는 경우 — 대규모 + 헤비면 Cursor, 아니면 Claude Pro
     if (isLongVol && (heavyUsage || dailyUsage)) {
       return rec(
         'Cursor Pro', '⌨️', 'pro', 180000,
@@ -491,6 +568,35 @@ function getRecommendation(answers) {
   }
 
   if (primary === 'writing') {
+    // Claude 메인 사용자 우선
+    if (mainTool === 'claude') {
+      if (isLongVol) {
+        return rec(
+          'Claude Pro (긴 문서엔 Gemini Advanced 병행)', '📝', 'pro', 180000,
+          `이미 Claude를 잘 쓰시니 Pro 업그레이드가 우선입니다. 책 한 권 분량의 문서는 Gemini Advanced(2M 컨텍스트)를 추가로 쓰시면 완벽합니다. ${TAIL}`,
+          ['Claude Pro', 'Gemini Advanced'],
+        );
+      }
+      return rec(
+        'Claude Pro', '📝', 'pro', 180000,
+        `이미 Claude를 잘 쓰고 계시니 Pro로 올리는 것이 가장 자연스럽습니다. 한국어 글쓰기·톤 조절에서 가장 안정적입니다. ${TAIL}`,
+        ['Claude Pro'],
+      );
+    }
+    if (mainTool === 'chatgpt') {
+      if (pain === 'quality') {
+        return rec(
+          'ChatGPT Plus + Claude Pro', '📝', 'pro', 180000,
+          `ChatGPT를 쓰시면서 품질에 아쉬움을 느끼시는 패턴입니다. Plus 유지하면서 Claude Pro(한국어 문장력 우위)를 추가하면 품질 이슈가 해소됩니다. ${TAIL}`,
+          ['ChatGPT Plus', 'Claude Pro'],
+        );
+      }
+      return rec(
+        'ChatGPT Plus', '💬', 'pro', 180000,
+        `이미 ChatGPT를 쓰고 계시니 Plus 업그레이드가 가장 자연스럽습니다. GPTs로 반복 업무 자동화까지 가능합니다. ${TAIL}`,
+        ['ChatGPT Plus'],
+      );
+    }
     if (isLongVol) {
       return rec(
         'Gemini Advanced', '📜', 'pro', 180000,
@@ -513,6 +619,21 @@ function getRecommendation(answers) {
   }
 
   if (primary === 'research') {
+    // Perplexity 쓰면 Pro로, 아니면 메인 도구 + Perplexity 조합
+    if (has('perplexity')) {
+      return rec(
+        'Perplexity Pro', '🔎', 'pro', 180000,
+        `이미 Perplexity를 쓰고 계시니 Pro 업그레이드가 가장 자연스럽습니다. Deep Research 모드로 보고서급 결과물까지 생성됩니다. ${TAIL}`,
+        ['Perplexity Pro'],
+      );
+    }
+    if (mainTool === 'claude') {
+      return rec(
+        'Claude Pro + Perplexity Pro', '🔎', 'pro', 180000,
+        `Claude를 잘 쓰시니 Pro는 유지하시고, 리서치 특화 Perplexity Pro(실시간 검색·출처 인용)를 함께 쓰면 팩트 체크와 심층 분석 모두 커버됩니다. ${TAIL}`,
+        ['Claude Pro', 'Perplexity Pro'],
+      );
+    }
     return rec(
       'Perplexity Pro', '🔎', 'pro', 180000,
       `리서치 중심의 사용 패턴에는 Perplexity Pro의 Deep Research가 최적입니다. 5~10분 만에 보고서 수준의 출처 기반 결과를 만들어줍니다. ${TAIL}`,
@@ -2056,6 +2177,20 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
 
   const sorted = [...data].sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
 
+  // 데이터 진단 — 각 필드 수집률 체크 (0명이면 Apps Script 구버전)
+  const fieldCoverage = {
+    q4Limit: data.filter((d) => d.q4Limit).length,
+    q5Payment: data.filter((d) => d.q5Payment).length,
+    q5PaymentAmount: data.filter((d) => d.q5PaymentAmount).length,
+    q6: data.filter((d) => d.q6).length,
+    q7: data.filter((d) => d.q7).length,
+  };
+  const missingFields = Object.entries(fieldCoverage).filter(([_, v]) => v === 0).map(([k]) => k);
+  const FIELD_LABEL = {
+    q4Limit: 'Q4 한도수준', q5Payment: 'Q5 결제방식',
+    q5PaymentAmount: 'Q5 개인월비용', q6: 'Q6 주관식 고민', q7: 'Q7 정책 의견',
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 no-print">
@@ -2078,6 +2213,54 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-12">
+        {/* 데이터 진단 — 필드 수집률 상시 표시 */}
+        {missingFields.length > 0 && (
+          <div className="rounded-2xl bg-rose-50 border-2 border-rose-300 p-5 shadow-sm no-print">
+            <div className="flex items-start gap-3 mb-3">
+              <AlertCircle size={22} className="text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-rose-900 mb-1">
+                  ⚠️ 시트에 저장되지 않는 필드가 있습니다
+                </h3>
+                <p className="text-xs text-rose-800/90 leading-relaxed">
+                  아래 필드들이 전부 비어있어요. Apps Script가 최신 버전이 아니거나 시트 헤더 수가 안 맞는 경우입니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+              {Object.entries(fieldCoverage).map(([k, v]) => {
+                const bad = v === 0;
+                return (
+                  <div key={k} className={`px-3 py-2 rounded-lg border text-xs ${bad ? 'bg-rose-100 border-rose-300 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                    <div className="font-semibold mb-0.5">{bad ? '❌' : '✓'} {FIELD_LABEL[k]}</div>
+                    <div className="text-[10px] opacity-80">{v}/{total}명 응답</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <details className="text-xs text-rose-900">
+              <summary className="cursor-pointer font-semibold hover:underline">해결 방법 펼치기 ▾</summary>
+              <ol className="mt-3 space-y-2 pl-4 list-decimal leading-relaxed">
+                <li>
+                  <b>구글 시트</b> 열기 → 1행이 <b>19개 컬럼</b>인지 확인:
+                  <div className="mt-1 p-2 bg-white rounded border border-rose-200 font-mono text-[10px] break-all">
+                    제출시간 | 이름 | 소속팀 | 직책 | Q1_용도 | Q2_분량 | Q3_빈도 | Q4_불편 | Q4_한도수준 | Q5_현재AI | Q5_결제 | Q5_개인월비용 | Q6_주관식 | Q7_정책의견 | 추천AI | 추천티어 | 예상절약액 | 활용도점수 | 활용도등급
+                  </div>
+                </li>
+                <li><b>확장 프로그램 → Apps Script</b> 열기 → 기존 코드 전체 지우고 README의 최신 코드로 교체 → 저장(Ctrl+S)</li>
+                <li><b>배포 → 배포 관리</b> → 현재 배포 ✏️ 연필 → 버전: <b>새 버전</b> → 배포</li>
+                <li>이 페이지 우상단 <b>새로고침</b> 버튼 클릭 → 새 응답 한 건 직접 테스트</li>
+              </ol>
+              <p className="mt-3 text-[10px] opacity-70">
+                ⓘ 이미 쌓인 구버전 응답 행은 새 컬럼이 비어 있어 정상입니다. 새 응답부터 반영됩니다.
+              </p>
+            </details>
+          </div>
+        )}
+
+
         {source === 'local' && (
           <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 leading-relaxed no-print">
             <div className="flex items-start gap-2">
@@ -2371,21 +2554,6 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
         </Section>
 
         <Section title="구독료 결제 방식 분포" icon={<AlertCircle size={20} />}>
-          {/* 시트 구버전 자동 감지: q5Payment 컬럼이 전부 비어있으면 Apps Script 업데이트 안내 */}
-          {total > 0 && data.every((d) => !d.q5Payment) && (
-            <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 leading-relaxed">
-              <div className="flex items-start gap-2">
-                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold mb-1">⚠️ Apps Script 업데이트 필요</div>
-                  <div className="text-xs">
-                    응답자가 결제 방식에 답했는데도 시트에 저장되지 않고 있습니다. Apps Script 코드가 구버전인 것 같아요.<br />
-                    <b>README의 Section 3</b> 최신 코드로 교체 → 시트 헤더 19컬럼으로 확장 → <b>배포 → 배포 관리 → 버전 수정 → 새 버전 배포</b> 후 이 페이지 새로고침해주세요.
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
           <PaymentDistribution
             data={data} paymentMap={paymentMap} total={total} byTeam={byTeam} teams={teams}
             amountMap={amountMap} burdenersCount={burdeners.length}
