@@ -8,7 +8,7 @@ import {
 // ============================================================
 // 상수
 // ============================================================
-const WEBHOOK_URL = 'YOUR_APPS_SCRIPT_URL';
+const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyHcZ6dzTZ_oFDTYD8iDqFBHaIO2zFsFmbEOj18JmWOY22JjtO61ncCvRnfKDTjkZm79A/exec';
 const ADMIN_PASSWORD = '1111';
 const LOCAL_KEY = 'gluck-ai-survey-responses';
 
