@@ -43,6 +43,7 @@ function loadLocal() {
       q4Limit: r.q4Limit || '',
       q5: r.q5 || '',
       q5Payment: r.q5Payment || '',
+      q5PaymentAmount: r.q5PaymentAmount || '',
       q6: r.q6 || '',
       ai: r.recommendedAi || r.ai || '',
       tier: r.recommendedTier || r.tier || '',
@@ -165,15 +166,16 @@ const QUESTIONS = {
   },
   q4: {
     label: '현재 AI를 쓰면서 답답하게 느끼는 점은요?',
-    hint: '해당되는 것 모두 선택해주세요 (1~3번은 중복 가능)',
+    hint: '해당되는 것 모두 선택해주세요 (1~4번은 중복 가능)',
     multi: true,
     exclusive: ['none', 'never'],
     options: [
-      { value: 'limit',   label: '무료 한도가 빨리 떨어져요',              desc: '횟수/시간 제한' },
-      { value: 'quality', label: '응답 품질이 좀 더 좋았으면 해요',          desc: '정확도/깊이 부족' },
-      { value: 'context', label: '더 긴 문서/대용량 자료를 한 번에 다루고 싶어요', desc: '컨텍스트 부족' },
-      { value: 'none',    label: '특별히 부족한 점은 없어요',              desc: '지금 충분' },
-      { value: 'never',   label: '아직 본격적으로 써본 적 없어요',           desc: '입문 단계' },
+      { value: 'limit',    label: '무료 한도가 빨리 떨어져요',                  desc: '횟수/시간 제한' },
+      { value: 'quality',  label: '응답 품질이 좀 더 좋았으면 해요',              desc: '정확도/깊이 부족' },
+      { value: 'context',  label: '더 긴 문서/대용량 자료를 한 번에 다루고 싶어요', desc: '컨텍스트 부족' },
+      { value: 'training', label: 'AI 에이전트·심화 활용법을 배우고 싶어요',       desc: '교육·학습 니즈' },
+      { value: 'none',     label: '특별히 부족한 점은 없어요',                  desc: '지금 충분' },
+      { value: 'never',    label: '아직 본격적으로 써본 적 없어요',              desc: '입문 단계' },
     ],
   },
   // Q5 결제 방식 후속 질문 — 유료 도구 사용 시 노출
@@ -184,6 +186,19 @@ const QUESTIONS = {
       { value: 'company',  label: '전부 회사 결제',          desc: '법인카드/지원' },
       { value: 'mixed',    label: '일부 개인, 일부 회사',    desc: '도구별로 다름' },
       { value: 'na',       label: '무료 도구만 쓰는 중',     desc: '결제 없음' },
+    ],
+  },
+
+  // 결제 2차 후속 — personal/mixed 시 본인 부담 월 지출 파악
+  q5PaymentAmount: {
+    label: '월 본인 부담 금액은 얼마 정도인가요?',
+    options: [
+      { value: 'under10k',  label: '월 1만원 이하',        desc: '소액 구독' },
+      { value: '10to30k',   label: '월 1~3만원',          desc: 'Pro 1개 수준' },
+      { value: '30to50k',   label: '월 3~5만원',          desc: 'Pro 2개 수준' },
+      { value: '50to100k',  label: '월 5~10만원',         desc: '다수 Pro 구독' },
+      { value: '100to200k', label: '월 10~20만원',        desc: 'Max 티어 포함' },
+      { value: 'over200k',  label: '월 20만원 이상',       desc: '헤비 투자' },
     ],
   },
 
@@ -208,6 +223,8 @@ const QUESTIONS = {
       { value: 'claude',     label: 'Claude',               desc: 'Anthropic' },
       { value: 'gemini',     label: 'Gemini',               desc: 'Google' },
       { value: 'perplexity', label: 'Perplexity',           desc: '검색 특화' },
+      { value: 'copilot',    label: 'Microsoft Copilot',    desc: 'MS365·오피스 통합' },
+      { value: 'wrtn',       label: '뤼튼 (Wrtn)',          desc: '한국 서비스' },
       { value: 'cursor',     label: 'Cursor',               desc: '코딩 IDE' },
       { value: 'other',      label: '기타',                  desc: '그 외 다른 도구 (직접 입력)' },
     ],
@@ -906,7 +923,7 @@ function SurveyMode() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({
     name: '', team: '', role: '',
-    q1: [], q1Other: '', q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q5Payment: '', q6: '',
+    q1: [], q1Other: '', q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q5Payment: '', q5PaymentAmount: '', q6: '', q7: '',
   });
   const [result, setResult] = useState(null);
 
@@ -942,6 +959,7 @@ function SurveyMode() {
       q4Limit: answers.q4Limit || '',
       q5: toArr(answers.q5).map((v) => v === 'other' && answers.q5Other ? `기타(${answers.q5Other})` : v).join(', '),
       q5Payment: answers.q5Payment || '',
+      q5PaymentAmount: answers.q5PaymentAmount || '',
       q6: answers.q6,
       recommendedAi: rec.ai,
       recommendedTier: rec.tier,
@@ -1036,6 +1054,9 @@ function SurveyMode() {
               paymentQuestion={QUESTIONS.q5Payment}
               paymentSelected={answers.q5Payment}
               onPaymentChange={(v) => setField('q5Payment', v)}
+              paymentAmountQuestion={QUESTIONS.q5PaymentAmount}
+              paymentAmountSelected={answers.q5PaymentAmount}
+              onPaymentAmountChange={(v) => setField('q5PaymentAmount', v)}
               onNext={next} onPrev={prev}
             />
           )}
@@ -1242,6 +1263,7 @@ function MultiQuestionStep({
   otherValue, otherText, onOtherChange, otherPlaceholder,
   followValue, followQuestion, followSelected, onFollowChange,
   paymentQuestion, paymentSelected, onPaymentChange,
+  paymentAmountQuestion, paymentAmountSelected, onPaymentAmountChange,
 }) {
   const current = Array.isArray(values) ? values : [];
   const exclusive = question.exclusive || [];
@@ -1249,6 +1271,9 @@ function MultiQuestionStep({
   const showFollow = followValue && followQuestion && current.includes(followValue);
   // 결제 follow-up: 선택값이 있고 배타적 옵션('none')만 고른 게 아니면 표시
   const showPayment = paymentQuestion && current.length > 0 && current.some((v) => !exclusive.includes(v));
+  // 결제 2차 follow-up: paymentSelected가 'personal' 또는 'mixed'일 때만
+  const showPaymentAmount = paymentAmountQuestion && showPayment &&
+    (paymentSelected === 'personal' || paymentSelected === 'mixed');
 
   const toggle = (v) => {
     let next;
@@ -1267,7 +1292,8 @@ function MultiQuestionStep({
   const ok = current.length > 0
     && (!showOther || (otherText || '').trim().length > 0)
     && (!showFollow || !!followSelected)
-    && (!showPayment || !!paymentSelected);
+    && (!showPayment || !!paymentSelected)
+    && (!showPaymentAmount || !!paymentAmountSelected);
 
   return (
     <div>
@@ -1352,6 +1378,35 @@ function MultiQuestionStep({
                     sel
                       ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
                       : 'bg-white text-slate-700 border-indigo-200 hover:border-indigo-400 hover:-translate-y-0.5'
+                  }`}>
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className={`text-[10px] mt-0.5 ${sel ? 'text-white/80' : 'text-slate-500'}`}>{opt.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {showPaymentAmount && (
+        <div className="mt-4 p-5 rounded-2xl bg-rose-50 border border-rose-200 anim-fade-in">
+          <div className="text-sm font-bold text-rose-900 mb-1 flex items-center gap-1.5">
+            💰 {paymentAmountQuestion.label} <span className="text-rose-500">*</span>
+          </div>
+          <div className="text-xs text-rose-800/80 mb-3">
+            {paymentSelected === 'mixed'
+              ? '개인이 부담하시는 부분만 해당되는 범위를 골라주세요.'
+              : '본인이 직접 결제하는 월 지출 합계를 알려주세요.'}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {paymentAmountQuestion.options.map((opt) => {
+              const sel = paymentAmountSelected === opt.value;
+              return (
+                <button key={opt.value} onClick={() => onPaymentAmountChange(opt.value)}
+                  className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-all ${
+                    sel
+                      ? 'bg-rose-600 text-white border-rose-700 shadow-sm'
+                      : 'bg-white text-slate-700 border-rose-200 hover:border-rose-400 hover:-translate-y-0.5'
                   }`}>
                   <div className="font-semibold">{opt.label}</div>
                   <div className={`text-[10px] mt-0.5 ${sel ? 'text-white/80' : 'text-slate-500'}`}>{opt.desc}</div>
@@ -1732,7 +1787,7 @@ const Q1_LABEL = {
   communication: '커뮤니케이션·CS', planning: '기획·전략', analysis: '데이터 분석',
   other: '기타',
 };
-const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', none: '부족함 없음', never: '미사용' };
+const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', training: '교육·학습 니즈', none: '부족함 없음', never: '미사용' };
 
 // 티어별 비용 (USD/월)
 const TIER_USD = { free: 0, pro: 20, max: 100 };
@@ -1896,6 +1951,17 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
     const k = d.q5Payment || 'unknown';
     paymentMap[k] = (paymentMap[k] || 0) + 1;
   });
+
+  // Q5 월 본인 부담 금액 분포 (개인/혼합 응답자만)
+  const amountMap = {};
+  const burdeners = data.filter((d) => d.q5Payment === 'personal' || d.q5Payment === 'mixed');
+  burdeners.forEach((d) => {
+    const k = d.q5PaymentAmount || 'unknown';
+    amountMap[k] = (amountMap[k] || 0) + 1;
+  });
+  // 대략 추정 월 합계 (범위 중간값으로)
+  const AMOUNT_MID = { under10k: 5000, '10to30k': 20000, '30to50k': 40000, '50to100k': 75000, '100to200k': 150000, over200k: 250000 };
+  const estimatedPersonalMonthly = burdeners.reduce((s, d) => s + (AMOUNT_MID[d.q5PaymentAmount] || 0), 0);
 
   // 추천 티어 분포
   const tierCounts = { free: 0, pro: 0, max: 0 };
@@ -2232,7 +2298,11 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
         </Section>
 
         <Section title="구독료 결제 방식 분포" icon={<AlertCircle size={20} />}>
-          <PaymentDistribution data={data} paymentMap={paymentMap} total={total} byTeam={byTeam} teams={teams} />
+          <PaymentDistribution
+            data={data} paymentMap={paymentMap} total={total} byTeam={byTeam} teams={teams}
+            amountMap={amountMap} burdenersCount={burdeners.length}
+            estimatedPersonalMonthly={estimatedPersonalMonthly}
+          />
         </Section>
 
         <Section title="주관식 답변 모아보기" icon={<FileText size={20} />}>
@@ -2276,7 +2346,17 @@ const PAYMENT_COLOR = {
   unknown:  'bg-slate-200',
 };
 
-function PaymentDistribution({ data, paymentMap, total, byTeam, teams }) {
+const AMOUNT_LABEL = {
+  under10k: '월 1만원 이하',
+  '10to30k': '월 1~3만원',
+  '30to50k': '월 3~5만원',
+  '50to100k': '월 5~10만원',
+  '100to200k': '월 10~20만원',
+  over200k: '월 20만원 이상',
+  unknown: '미응답',
+};
+
+function PaymentDistribution({ data, paymentMap, total, byTeam, teams, amountMap, burdenersCount, estimatedPersonalMonthly }) {
   const personalCount = paymentMap.personal || 0;
   const companyCount = paymentMap.company || 0;
   const mixedCount = paymentMap.mixed || 0;
@@ -2362,6 +2442,44 @@ function PaymentDistribution({ data, paymentMap, total, byTeam, teams }) {
           })}
         </div>
       </div>
+
+      {/* 월 본인 부담 금액 분포 */}
+      {burdenersCount > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+          <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">월 본인 부담 금액 분포</h3>
+              <div className="text-xs text-slate-500 mt-0.5">개인·혼합 결제 응답자 {burdenersCount}명 기준</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">전체 개인 지출 추정</div>
+              <div className="text-base font-bold text-rose-700 tabular-nums">월 약 {estimatedPersonalMonthly.toLocaleString('ko-KR')}원</div>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {['under10k', '10to30k', '30to50k', '50to100k', '100to200k', 'over200k', 'unknown'].filter((k) => amountMap[k]).map((k) => {
+              const v = amountMap[k] || 0;
+              const pct = burdenersCount ? (v / burdenersCount) * 100 : 0;
+              const intense = k === '100to200k' || k === 'over200k';
+              return (
+                <div key={k} className="flex items-center gap-3 text-xs">
+                  <span className="font-medium text-slate-700 w-28">{AMOUNT_LABEL[k] || k}</span>
+                  <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${intense ? 'bg-rose-600' : 'bg-rose-400'}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="text-slate-500 tabular-nums w-20 text-right">{v}명 ({pct.toFixed(0)}%)</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600 leading-relaxed">
+            💡 월 10만원 이상 개인 부담 응답자가 있다면 <b>즉시 회사 지원 전환 검토</b>가 필요합니다.
+            연 환산하면 <span className="font-semibold text-rose-700 tabular-nums">약 {(estimatedPersonalMonthly * 12).toLocaleString('ko-KR')}원</span>이 개인 주머니에서 나가고 있는 셈입니다.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
