@@ -29,13 +29,37 @@ npm run dev
 ### 2) 확장 프로그램 → Apps Script 에 아래 코드 붙여넣기
 
 ```javascript
+// 컬럼 순서: 제출시간,이름,소속팀,직책,Q1_용도,Q2_분량,Q3_빈도,Q4_불편,Q4_한도수준,
+//           Q5_현재AI,Q5_결제,Q5_개인월비용,Q6_주관식,Q7_정책의견,
+//           추천AI,추천티어,예상절약액,활용도점수,활용도등급
 function doPost(e) {
   const sheet = SpreadsheetApp.getActiveSheet();
   const data = JSON.parse(e.postData.contents);
+
+  // 삭제 요청 처리 (관리자 페이지에서 호출)
+  if (data.action === 'delete') {
+    const values = sheet.getDataRange().getValues();
+    for (let i = 1; i < values.length; i++) {
+      const rowTs = values[i][0] ? new Date(values[i][0]).toISOString() : '';
+      const rowName = String(values[i][1] || '');
+      if (rowTs === data.timestamp && rowName === data.name) {
+        sheet.deleteRow(i + 1);
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, deleted: true }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, reason: 'not_found' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 기본: 응답 추가
   sheet.appendRow([
     new Date(),
     data.name, data.team, data.role,
-    data.q1, data.q2, data.q3, data.q4, data.q5, data.q6,
+    data.q1, data.q2, data.q3,
+    data.q4, data.q4Limit || '',
+    data.q5, data.q5Payment || '', data.q5PaymentAmount || '',
+    data.q6, data.q7 || '',
     data.recommendedAi, data.recommendedTier,
     data.savings, data.maturityScore, data.maturityLabel,
   ]);
@@ -55,13 +79,17 @@ function doGet(e) {
     q2: String(row[5] || ''),
     q3: String(row[6] || ''),
     q4: String(row[7] || ''),
-    q5: String(row[8] || ''),
-    q6: String(row[9] || ''),
-    ai: String(row[10] || ''),
-    tier: String(row[11] || ''),
-    savings: Number(row[12]) || 0,
-    score: Number(row[13]) || 0,
-    grade: String(row[14] || ''),
+    q4Limit: String(row[8] || ''),
+    q5: String(row[9] || ''),
+    q5Payment: String(row[10] || ''),
+    q5PaymentAmount: String(row[11] || ''),
+    q6: String(row[12] || ''),
+    q7: String(row[13] || ''),
+    ai: String(row[14] || ''),
+    tier: String(row[15] || ''),
+    savings: Number(row[16]) || 0,
+    score: Number(row[17]) || 0,
+    grade: String(row[18] || ''),
   }));
   return ContentService.createTextOutput(JSON.stringify(records))
     .setMimeType(ContentService.MimeType.JSON);

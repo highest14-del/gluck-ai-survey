@@ -142,6 +142,7 @@ const QUESTIONS = {
       { value: 'communication', label: '커뮤니케이션·고객 응대',          desc: '메일, 카톡, CS' },
       { value: 'planning',      label: '기획·전략·마케팅',               desc: '아이디어 정리, 캠페인 기획' },
       { value: 'analysis',      label: '데이터 분석·엑셀 작업',           desc: '수치 정리, 보고용 차트' },
+      { value: 'meeting',       label: '회의록·녹취록 정리',              desc: '회의 요약, 녹음 텍스트화' },
       { value: 'other',         label: '기타',                          desc: '직접 입력' },
     ],
   },
@@ -240,8 +241,8 @@ function pickPrimary(q1Array) {
   if (arr.includes('coding')) return 'coding';
   // analysis는 research와 같은 도구군 (Perplexity·Claude)
   if (arr.includes('research') || arr.includes('analysis')) return 'research';
-  // planning은 writing과 같은 도구군 (Claude·ChatGPT)
-  if (arr.includes('writing') || arr.includes('planning')) return 'writing';
+  // planning, meeting은 writing과 같은 도구군 (Claude·ChatGPT — 요약·문서화 강점)
+  if (arr.includes('writing') || arr.includes('planning') || arr.includes('meeting')) return 'writing';
   if (arr.includes('image')) return 'image';
   // communication, general, other는 범용 도구군
   return 'general';
@@ -372,6 +373,7 @@ function getRecommendation(answers) {
     limit: '한도 부족',
     quality: '응답 품질',
     context: '긴 자료 처리',
+    training: '심화 활용법 학습 니즈',
   };
   const realPains = painArr.filter((p) => painLabels[p]);
   const painLabel = realPains.length >= 2
@@ -571,7 +573,7 @@ function getMaturity(answers) {
 
   // Q1 (array) — 용도 중 가장 높은 점수만 반영
   const q1ScoreMap = {
-    coding: 15, research: 15, analysis: 13, planning: 12, writing: 10,
+    coding: 15, research: 15, analysis: 13, planning: 12, writing: 10, meeting: 10,
     image: 8, communication: 7, general: 5, other: 8,
   };
   const q1Arr = toArr(answers.q1);
@@ -579,7 +581,7 @@ function getMaturity(answers) {
   score += q1Max;
 
   // Q4 (pain point, 다중) — 가장 높은 점수만 반영
-  const q4ScoreMap = { never: 0, none: 5, quality: 8, limit: 10, context: 12 };
+  const q4ScoreMap = { never: 0, none: 5, training: 7, quality: 8, limit: 10, context: 12 };
   const q4Arr = toArr(answers.q4);
   const q4Max = q4Arr.reduce((m, v) => Math.max(m, q4ScoreMap[v] || 0), 0);
   score += q4Max;
@@ -934,7 +936,13 @@ function SurveyMode() {
   const prev = () => setStep((s) => Math.max(0, s - 1));
   const restart = () => {
     setStep(0);
-    setAnswers({ name: '', team: '', role: '', q1: [], q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q6: '' });
+    setAnswers({
+      name: '', team: '', role: '',
+      q1: [], q1Other: '', q2: '', q3: '',
+      q4: [], q4Limit: '',
+      q5: [], q5Other: '', q5Payment: '', q5PaymentAmount: '',
+      q6: '', q7: '',
+    });
     setResult(null);
   };
 
@@ -1659,7 +1667,12 @@ function AdminMode() {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const json = await res.json();
         if (!Array.isArray(json)) throw new Error('invalid response shape');
-        setData(json);
+        // 웹훅 응답엔 _id가 없으므로 timestamp|name 조합으로 생성
+        const withIds = json.map((r, i) => ({
+          ...r,
+          _id: r._id || (r.timestamp ? `${r.timestamp}|${r.name || ''}` : `idx-${i}`),
+        }));
+        setData(withIds);
         setSource('webhook');
         setLoading(false);
         return;
@@ -1672,14 +1685,31 @@ function AdminMode() {
     setLoading(false);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (source === 'local') {
       deleteLocal(id);
       setData(loadLocal());
-    } else {
-      // 웹훅 모드: 화면에서만 제거 (시트에서 영구 삭제하려면 doDelete API 추가 필요)
-      setData((prev) => prev.filter((r) => r._id !== id));
+      return;
     }
+
+    // 웹훅 모드: 시트에서 영구 삭제 요청 후 UI에서 제거
+    const record = (data || []).find((r) => r._id === id);
+    if (!record) return;
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete',
+          timestamp: record.timestamp || '',
+          name: record.name || '',
+        }),
+      });
+    } catch (e) {
+      // no-cors라 응답 못 읽음. 실패해도 UI에선 즉시 제거
+    }
+    setData((prev) => prev.filter((r) => r._id !== id));
   };
 
   useEffect(() => {
@@ -1828,7 +1858,7 @@ const Q1_LABEL = {
   coding: '코딩 및 개발', writing: '문서 작성', general: '일상 사용',
   image: '이미지 생성', research: '학술 연구',
   communication: '커뮤니케이션·CS', planning: '기획·전략', analysis: '데이터 분석',
-  other: '기타',
+  meeting: '회의록 정리', other: '기타',
 };
 const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', training: '교육·학습 니즈', none: '부족함 없음', never: '미사용' };
 
@@ -2265,7 +2295,7 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
           </div>
           {source === 'webhook' && (
             <p className="text-xs text-slate-400 mt-3 leading-relaxed">
-              ⚠️ 시트 연동 모드: 화면에서만 숨겨지며 구글 시트 원본은 유지됩니다. 시트에서 행을 직접 삭제해야 영구 삭제됩니다.
+              ⚠️ 삭제 시 구글 시트 행도 함께 영구 삭제됩니다. 되돌릴 수 없으니 신중히 진행해주세요.
             </p>
           )}
         </Section>
@@ -2341,6 +2371,21 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
         </Section>
 
         <Section title="구독료 결제 방식 분포" icon={<AlertCircle size={20} />}>
+          {/* 시트 구버전 자동 감지: q5Payment 컬럼이 전부 비어있으면 Apps Script 업데이트 안내 */}
+          {total > 0 && data.every((d) => !d.q5Payment) && (
+            <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold mb-1">⚠️ Apps Script 업데이트 필요</div>
+                  <div className="text-xs">
+                    응답자가 결제 방식에 답했는데도 시트에 저장되지 않고 있습니다. Apps Script 코드가 구버전인 것 같아요.<br />
+                    <b>README의 Section 3</b> 최신 코드로 교체 → 시트 헤더 19컬럼으로 확장 → <b>배포 → 배포 관리 → 버전 수정 → 새 버전 배포</b> 후 이 페이지 새로고침해주세요.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <PaymentDistribution
             data={data} paymentMap={paymentMap} total={total} byTeam={byTeam} teams={teams}
             amountMap={amountMap} burdenersCount={burdeners.length}
