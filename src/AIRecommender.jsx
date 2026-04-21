@@ -45,6 +45,7 @@ function loadLocal() {
       q5Payment: r.q5Payment || '',
       q5PaymentAmount: r.q5PaymentAmount || '',
       q6: r.q6 || '',
+      q7: r.q7 || '',
       ai: r.recommendedAi || r.ai || '',
       tier: r.recommendedTier || r.tier || '',
       savings: Number(r.savings) || 0,
@@ -916,8 +917,8 @@ export default function AIRecommender() {
 
 // ============================================================
 // 진단 모드
-// Step: 0=intro, 1=name, 2=welcome(+team+role), 3=q1, 4=q2, 5=q3, 6=q4, 7=q5, 8=q6, 9=loading, 10=result
-// Progress: 1~8 / 8
+// Step: 0=intro, 1=name, 2=welcome, 3=q1, 4=q2, 5=q3, 6=q4, 7=q5, 8=q6, 9=q7, 10=loading, 11=result
+// Progress: 1~9 / 9
 // ============================================================
 function SurveyMode() {
   const [step, setStep] = useState(0);
@@ -942,9 +943,9 @@ function SurveyMode() {
     setTimeout(next, 220);
   };
 
-  // Step 9 로딩 진입 시 결과 계산 + 웹훅
+  // Step 10 로딩 진입 시 결과 계산 + 웹훅
   useEffect(() => {
-    if (step !== 9) return;
+    if (step !== 10) return;
     const rec = getRecommendation(answers);
     const mat = getMaturity(answers);
     setResult({ ...rec, maturityScore: mat.score, maturityLabel: mat.label, maturityEmoji: mat.emoji });
@@ -961,6 +962,7 @@ function SurveyMode() {
       q5Payment: answers.q5Payment || '',
       q5PaymentAmount: answers.q5PaymentAmount || '',
       q6: answers.q6,
+      q7: answers.q7 || '',
       recommendedAi: rec.ai,
       recommendedTier: rec.tier,
       savings: rec.savings,
@@ -968,13 +970,13 @@ function SurveyMode() {
       maturityLabel: mat.label,
     });
 
-    const t = setTimeout(() => setStep(10), 1800);
+    const t = setTimeout(() => setStep(11), 1800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  const progressStep = step >= 1 && step <= 8 ? step : step >= 9 ? 8 : 0;
-  const showProgress = step >= 1 && step <= 8;
+  const progressStep = step >= 1 && step <= 9 ? step : step >= 10 ? 9 : 0;
+  const showProgress = step >= 1 && step <= 9;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -982,10 +984,10 @@ function SurveyMode() {
         <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200">
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
             <div className="text-xs font-medium text-slate-500 tabular-nums">
-              {progressStep}/8
+              {progressStep}/9
             </div>
             <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${(progressStep / 8) * 100}%` }} />
+              <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${(progressStep / 9) * 100}%` }} />
             </div>
           </div>
         </div>
@@ -1063,8 +1065,11 @@ function SurveyMode() {
           {step === 8 && (
             <Q6Step value={answers.q6} onChange={(v) => setField('q6', v)} onSubmit={next} onPrev={prev} />
           )}
-          {step === 9 && <LoadingStep name={answers.name} role={answers.role} />}
-          {step === 10 && result && <ResultStep answers={answers} result={result} onRestart={restart} />}
+          {step === 9 && (
+            <Q7Step value={answers.q7} onChange={(v) => setField('q7', v)} onSubmit={next} onPrev={prev} />
+          )}
+          {step === 10 && <LoadingStep name={answers.name} role={answers.role} />}
+          {step === 11 && result && <ResultStep answers={answers} result={result} onRestart={restart} />}
         </div>
       </div>
     </div>
@@ -1092,7 +1097,7 @@ function Intro({ onStart }) {
         <div className="flex items-center justify-center gap-6 text-sm text-slate-600">
           <div><div className="text-2xl mb-1">⏱️</div><div className="font-medium">2분 내외</div></div>
           <div className="w-px h-12 bg-slate-200" />
-          <div><div className="text-2xl mb-1">📋</div><div className="font-medium">8단계 간단 진단</div></div>
+          <div><div className="text-2xl mb-1">📋</div><div className="font-medium">9단계 간단 진단</div></div>
         </div>
       </div>
 
@@ -1459,7 +1464,45 @@ function Q6Step({ value, onChange, onSubmit, onPrev }) {
         </button>
         <button onClick={onSubmit} disabled={!ok}
           className={`flex-1 py-4 rounded-xl font-semibold transition-all ${ok ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
-          결과 보기 →
+          다음 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Q7 (선택 입력) — 회사 AI 정책 의견 ----------
+function Q7Step({ value, onChange, onSubmit, onPrev }) {
+  const len = (value || '').length;
+  const hasContent = (value || '').trim().length > 0;
+  return (
+    <div>
+      <div className="text-xs font-mono font-bold text-slate-400 mb-2 flex items-center gap-2">
+        <span>Q7</span>
+        <span className="text-slate-400 font-sans font-normal normal-case">· 선택 입력</span>
+      </div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3 leading-snug">
+        회사 AI 정책에 바라는 점이 있다면?
+      </h2>
+      <p className="text-slate-500 mb-6 text-sm leading-relaxed">
+        건의사항·제안·개선 아이디어를 편하게 남겨주세요. 비워두셔도 괜찮아요.
+      </p>
+
+      <textarea value={value} onChange={(e) => onChange(e.target.value.slice(0, 500))} rows={5}
+        placeholder="예: 팀별 Pro 구독 일괄 지원 검토 / 사내 AI 교육 세션 / 보안 가이드라인 / 정기 노하우 공유 자리 등"
+        className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all resize-none" />
+
+      <div className="flex justify-end mt-2 text-xs">
+        <span className="text-slate-400 tabular-nums">{len}/500</span>
+      </div>
+
+      <div className="flex gap-3 mt-8">
+        <button onClick={onPrev} className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
+          <ArrowLeft size={16} /> 이전
+        </button>
+        <button onClick={onSubmit}
+          className="flex-1 py-4 rounded-xl font-semibold bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5 transition-all">
+          {hasContent ? '결과 보기 →' : '건너뛰고 결과 보기 →'}
         </button>
       </div>
     </div>
@@ -2305,7 +2348,7 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
           />
         </Section>
 
-        <Section title="주관식 답변 모아보기" icon={<FileText size={20} />}>
+        <Section title="주관식 답변 모아보기 (Q6 · 고민)" icon={<FileText size={20} />}>
           <div className="space-y-6">
             {teams.map((t) => (
               <div key={t} className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
@@ -2324,6 +2367,41 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
                 </div>
               </div>
             ))}
+          </div>
+        </Section>
+
+        <Section title="회사 AI 정책 의견 (Q7)" icon={<FileText size={20} />}>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+            {data.filter((d) => (d.q7 || '').trim().length > 0).length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-6">아직 남겨진 의견이 없습니다.</p>
+            ) : (
+              <div className="space-y-6">
+                {teams.map((t) => {
+                  const withOpinion = byTeam[t].filter((m) => (m.q7 || '').trim().length > 0);
+                  if (withOpinion.length === 0) return null;
+                  return (
+                    <div key={t}>
+                      <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                        {t}<span className="text-xs font-normal text-slate-500">({withOpinion.length}명 의견)</span>
+                      </h3>
+                      <div className="space-y-3">
+                        {withOpinion.map((m, i) => (
+                          <div key={i} className="border-l-4 border-indigo-200 bg-indigo-50/30 pl-4 pr-3 py-2 rounded-r-lg">
+                            <div className="text-xs text-slate-500 mb-1">
+                              <b className="text-slate-700">{m.name}</b>{m.role ? ` · ${m.role}` : ''}
+                            </div>
+                            <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{m.q7}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">
+              💡 반복적으로 언급되는 요청은 공식 AI 정책 문서에 반영할 후보입니다.
+            </div>
           </div>
         </Section>
       </div>
