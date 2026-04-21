@@ -1551,7 +1551,7 @@ function AdminMode() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [source, setSource] = useState('local'); // 'local' | 'webhook'
-  const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyDiHwnogg2cbXWcbSu_dGr7WtJ5t4s7ppZB7e0tYeZhaQ1lauaXKvUv4yQfb_nD9TMOw/exec';
+  const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyHcZ6dzTZ_oFDTYD8iDqFBHaIO2zFsFmbEOj18JmWOY22JjtO61ncCvRnfKDTjkZm79A/exec';
   const useWebhook = WEBHOOK_URL && WEBHOOK_URL !== 'YOUR_APPS_SCRIPT_URL';
   const fetchData = async () => {
     setLoading(true);
