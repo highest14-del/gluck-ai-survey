@@ -9,7 +9,54 @@ import {
 // 상수
 // ============================================================
 const WEBHOOK_URL = 'YOUR_APPS_SCRIPT_URL';
-const ADMIN_PASSWORD = 'gluck2026';
+const ADMIN_PASSWORD = '1111';
+const LOCAL_KEY = 'gluck-ai-survey-responses';
+
+// ============================================================
+// 로컬 저장소 (웹훅 미설정 시 폴백 — 같은 브라우저 내 응답만 보존)
+// ============================================================
+function saveLocal(record) {
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]');
+    list.push({
+      _id: (window.crypto?.randomUUID?.() || String(Date.now()) + Math.random().toString(36).slice(2)),
+      timestamp: new Date().toISOString(),
+      ...record,
+    });
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(list));
+  } catch (e) {}
+}
+
+function loadLocal() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]');
+    return list.map((r) => ({
+      _id: r._id,
+      timestamp: r.timestamp || '',
+      name: r.name || '',
+      team: r.team || '',
+      role: r.role || '',
+      q1: r.q1 || '',
+      q2: r.q2 || '',
+      q3: r.q3 || '',
+      q4: r.q4 || '',
+      q5: r.q5 || '',
+      q6: r.q6 || '',
+      ai: r.recommendedAi || r.ai || '',
+      tier: r.recommendedTier || r.tier || '',
+      savings: Number(r.savings) || 0,
+      score: Number(r.maturityScore || r.score) || 0,
+      grade: r.maturityLabel || r.grade || '',
+    }));
+  } catch (e) { return []; }
+}
+
+function deleteLocal(id) {
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]');
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(list.filter((r) => r._id !== id)));
+  } catch (e) {}
+}
 
 const TEAMS = ['경영진', '기획팀', '운영팀', '출력팀', '후가공팀', '팩토리팀', '경영지원팀'];
 
@@ -107,7 +154,10 @@ const QUESTIONS = {
     ],
   },
   q4: {
-    label: '현재 AI를 쓰면서 가장 답답하게 느끼는 점은요?',
+    label: '현재 AI를 쓰면서 답답하게 느끼는 점은요?',
+    hint: '해당되는 것 모두 선택해주세요 (1~3번은 중복 가능)',
+    multi: true,
+    exclusive: ['none', 'never'],
     options: [
       { value: 'limit',   label: '무료 한도가 빨리 떨어져요',              desc: '횟수/시간 제한' },
       { value: 'quality', label: '응답 품질이 좀 더 좋았으면 해요',          desc: '정확도/깊이 부족' },
@@ -128,8 +178,7 @@ const QUESTIONS = {
       { value: 'gemini',     label: 'Gemini',               desc: 'Google' },
       { value: 'perplexity', label: 'Perplexity',           desc: '검색 특화' },
       { value: 'cursor',     label: 'Cursor',               desc: '코딩 IDE' },
-      { value: 'midjourney', label: 'Midjourney',           desc: '이미지' },
-      { value: 'other',      label: '기타',                  desc: '그 외 다른 도구' },
+      { value: 'other',      label: '기타',                  desc: '그 외 다른 도구 (직접 입력)' },
     ],
   },
 };
@@ -182,10 +231,6 @@ const TOOL_REASONS = {
     'IDE 안에서 코드와 직접 상호작용 — 브라우저 왕복 없이 빠름',
     'Agent 모드로 멀티 파일 자동 수정 + 모델(Claude/GPT) 선택 가능',
   ],
-  'Midjourney': [
-    '예술적 비주얼 퀄리티 업계 1위 — 디자인·콘셉트 작업 최강',
-    '레퍼런스 이미지 기반 변형(--cref, --sref) 워크플로 직관적',
-  ],
   'Runway': [
     '영상 생성 도구 중 안정성·일관성 가장 우수 (Gen-3)',
     '이미지→영상, 텍스트→영상, 마스크 인페인팅까지 풀 파이프라인',
@@ -214,7 +259,15 @@ function getRecommendation(answers) {
   const primary = pickPrimary(answers.q1);
   const volume = answers.q2;
   const frequency = answers.q3;
-  const pain = answers.q4;
+  const painArr = toArr(answers.q4);
+  const hasPain = (p) => painArr.includes(p);
+  // 가장 우선되는 단일 pain (advice 문구 생성용)
+  const pain = hasPain('never') ? 'never'
+    : hasPain('limit') ? 'limit'
+    : hasPain('context') ? 'context'
+    : hasPain('quality') ? 'quality'
+    : hasPain('none') ? 'none'
+    : '';
   const text = (answers.q6 || '').toLowerCase();
   const wantsVideo = /영상|동영상|비디오|video|movie|short|숏폼|릴스/.test(text);
   const currentAis = toArr(answers.q5);
@@ -222,15 +275,27 @@ function getRecommendation(answers) {
 
   // ---------- 티어 결정 ----------
   let tier;
-  if (pain === 'never' || pain === 'none') tier = 'free';
-  else if ((pain === 'limit' || pain === 'context') && frequency === 'heavy' && volume === 'long') tier = 'max';
+  if (hasPain('never') || (hasPain('none') && painArr.length === 1)) tier = 'free';
+  else if ((hasPain('limit') || hasPain('context')) && frequency === 'heavy' && volume === 'long') tier = 'max';
   else tier = 'pro';
 
-  const painLabel = {
-    limit: '현재 한도 부족을 느끼고 계신 점',
-    quality: '응답 품질에 아쉬움을 느끼시는 점',
-    context: '긴 자료를 한 번에 다루고 싶어하시는 점',
-  }[pain] || '현재 업무 패턴';
+  // 다중 pain 시 부드럽게 묶어서 표현
+  const painLabels = {
+    limit: '한도 부족',
+    quality: '응답 품질',
+    context: '긴 자료 처리',
+  };
+  const realPains = painArr.filter((p) => painLabels[p]);
+  const painLabel = realPains.length >= 2
+    ? `현재 ${realPains.map((p) => painLabels[p]).join('·')} 부분에서 아쉬움을 느끼고 계신 점`
+    : ({
+        limit: '현재 한도 부족을 느끼고 계신 점',
+        quality: '응답 품질에 아쉬움을 느끼시는 점',
+        context: '긴 자료를 한 번에 다루고 싶어하시는 점',
+      }[pain] || '현재 업무 패턴');
+
+  // 공통 마무리 문구
+  const TAIL = '답변 덕분에 글룩의 AI 예산 활용 계획에 큰 도움이 되었습니다.';
 
   // ---------- 무료 ----------
   if (tier === 'free') {
@@ -238,8 +303,8 @@ function getRecommendation(answers) {
       return rec(
         'Runway 무료 + Microsoft Designer', '🎬', 'free', 240000,
         pain === 'never'
-          ? '영상 생성에 관심이 있으시군요. 우선 Runway 무료 플랜으로 짧은 클립부터 만들어 보시고, 필요해지면 그때 유료를 검토하시는 게 가장 효율적입니다. 답변 덕분에 글룩이 영상 도구 도입 시점을 정확히 가늠할 수 있게 되었습니다.'
-          : '영상 작업 빈도가 아직 가벼우시다면 Runway 무료로도 핵심 기능을 충분히 체험할 수 있습니다. 답변 덕분에 글룩의 영상 콘텐츠 예산이 합리적으로 책정될 수 있게 되었습니다.',
+          ? `영상 생성에 관심이 있으시군요. 우선 Runway 무료 플랜으로 짧은 클립부터 만들어 보시고, 필요해지면 그때 유료를 검토하시는 게 가장 효율적입니다. ${TAIL}`
+          : `영상 작업 빈도가 아직 가벼우시다면 Runway 무료로도 핵심 기능을 충분히 체험할 수 있습니다. ${TAIL}`,
         ['Runway'],
         'Microsoft Designer는 Bing Image Creator(DALL-E 3) 기반으로 무료 이미지 생성 제공',
       );
@@ -247,7 +312,7 @@ function getRecommendation(answers) {
     if (primary === 'image') {
       return rec(
         'ChatGPT 무료 + Microsoft Designer', '🖼️', 'free', 240000,
-        '이미지 생성 빈도가 가벼운 패턴에는 무료 도구 조합으로도 충분합니다. 답변 덕분에 글룩이 비주얼 업무 영역의 도입 우선순위를 정할 수 있게 되었습니다.',
+        `이미지 생성 빈도가 가벼운 패턴에는 무료 도구 조합으로도 충분합니다. ${TAIL}`,
         ['ChatGPT Plus'],
         'Microsoft Designer는 무료로 DALL-E 3 기반 이미지를 생성할 수 있는 가장 가성비 좋은 옵션',
       );
@@ -255,29 +320,29 @@ function getRecommendation(answers) {
     if (primary === 'research') {
       return rec(
         'Perplexity 무료 + Gemini 무료', '🔍', 'free', 240000,
-        '리서치 위주의 사용 패턴에는 출처 기반 검색 Perplexity와 Google 검색 통합 Gemini 조합이 무료에서 가장 강력합니다. 답변 덕분에 글룩이 합리적인 도입 계획을 세울 수 있게 되었습니다.',
+        `리서치 위주의 사용 패턴에는 출처 기반 검색 Perplexity와 Google 검색 통합 Gemini 조합이 무료에서 가장 강력합니다. ${TAIL}`,
         ['Perplexity Pro', 'Gemini Advanced'],
       );
     }
     if (primary === 'coding') {
       return rec(
         'Claude 무료 + ChatGPT 무료', '🎨', 'free', 240000,
-        '코딩 학습·실험 단계에는 Claude(추론력)와 ChatGPT(생태계)를 무료로 병행하는 것이 가장 효율적입니다. 답변 덕분에 글룩이 개발 인력 대상 도입 시점을 잡을 수 있게 되었습니다.',
+        `코딩 학습·실험 단계에는 Claude(추론력)와 ChatGPT(생태계)를 무료로 병행하는 것이 가장 효율적입니다. ${TAIL}`,
         ['Claude Pro', 'ChatGPT Plus'],
       );
     }
     if (primary === 'writing') {
       return rec(
         'Claude 무료 + ChatGPT 무료', '✍️', 'free', 240000,
-        '문서 작업이 가벼운 단계에는 무료 모델 조합으로 충분합니다. 답변 덕분에 글룩의 문서 업무 도구 예산이 합리적으로 책정될 수 있게 되었습니다.',
+        `문서 작업이 가벼운 단계에는 무료 모델 조합으로 충분합니다. ${TAIL}`,
         ['Claude Pro', 'ChatGPT Plus'],
       );
     }
     return rec(
       'Gemini 무료 + ChatGPT 무료', '💎', 'free', 240000,
       pain === 'never'
-        ? '이제 AI 활용을 시작하시는 단계이시군요. Gemini와 ChatGPT 무료를 함께 써보시면서 어떤 도구가 본인 업무에 잘 맞는지 비교해보시는 것을 추천드립니다.'
-        : '일상 활용에는 무료 조합으로도 부족함이 거의 없습니다. 답변 덕분에 글룩이 불필요한 구독 없이 합리적인 예산을 수립할 수 있게 되었습니다. 감사합니다.',
+        ? `이제 AI 활용을 시작하시는 단계이시군요. Gemini와 ChatGPT 무료를 함께 써보시면서 어떤 도구가 본인 업무에 잘 맞는지 비교해보시는 것을 추천드립니다. ${TAIL}`
+        : `일상 활용에는 무료 조합으로도 부족함이 거의 없습니다. ${TAIL} 감사합니다.`,
       ['ChatGPT Plus', 'Gemini Advanced'],
     );
   }
@@ -287,34 +352,34 @@ function getRecommendation(answers) {
     if (primary === 'coding') {
       return rec(
         'Claude Max + Cursor Pro', '💎', 'max', 0,
-        '대규모 코드베이스를 하루 종일 다루시는 헤비 패턴에는 Claude Max(고용량 추론)와 Cursor Pro(IDE 통합) 조합이 본전을 뽑는 투자입니다. 응답 덕분에 글룩이 핵심 개발 인력 지원 전략을 명확히 세울 수 있게 되었습니다.',
+        `대규모 코드베이스를 하루 종일 다루시는 헤비 패턴에는 Claude Max(고용량 추론)와 Cursor Pro(IDE 통합) 조합이 본전을 뽑는 투자입니다. ${TAIL}`,
         ['Claude Max', 'Cursor Pro'],
       );
     }
     if (primary === 'writing' || primary === 'research') {
       return rec(
         'Claude Max + Gemini Advanced', '📚', 'max', 0,
-        '방대한 문서를 매일 다루시는 업무 특성상 Claude Max(추론력)와 Gemini Advanced(2M 컨텍스트) 조합이 가장 강력합니다. 답변 덕분에 글룩의 핵심 작업자 AI 지원 예산 수립에 큰 도움이 되었습니다.',
+        `방대한 문서를 매일 다루시는 업무 특성상 Claude Max(추론력)와 Gemini Advanced(2M 컨텍스트) 조합이 가장 강력합니다. ${TAIL}`,
         ['Claude Max', 'Gemini Advanced'],
       );
     }
     if (wantsVideo) {
       return rec(
-        'Sora + Midjourney + ChatGPT Plus', '🎬', 'max', 0,
-        '영상 작업을 본격적으로 하시는 패턴이라면 Sora(영상)+Midjourney(키프레임)+ChatGPT Plus(스크립트) 조합이 풀 파이프라인을 커버합니다. 답변 덕분에 글룩의 콘텐츠 제작 전략에 맞는 예산이 잡힐 수 있게 되었습니다.',
-        ['Sora', 'Midjourney'],
+        'Sora + Runway + ChatGPT Plus', '🎬', 'max', 0,
+        `영상 작업을 본격적으로 하시는 패턴이라면 Sora·Runway(영상 생성)와 ChatGPT Plus(스크립트·DALL-E 3 키프레임) 조합이 풀 파이프라인을 커버합니다. ${TAIL}`,
+        ['Sora', 'Runway'],
       );
     }
     if (primary === 'image') {
       return rec(
-        'Midjourney + ChatGPT Plus', '🎨', 'max', 0,
-        '비주얼 작업을 헤비하게 하시는 패턴에는 Midjourney(예술성)와 ChatGPT Plus(텍스트+빠른 이미지) 조합이 정답입니다. 답변 덕분에 글룩의 디자인 영역 AI 투자가 명확해졌습니다.',
-        ['Midjourney', 'ChatGPT Plus'],
+        'ChatGPT Plus + Runway', '🎨', 'max', 0,
+        `비주얼 작업을 헤비하게 하시는 패턴에는 ChatGPT Plus(DALL-E 3·빠른 이미지 생성)와 Runway(정밀 편집·영상 확장) 조합이 실용적입니다. ${TAIL}`,
+        ['ChatGPT Plus', 'Runway'],
       );
     }
     return rec(
       'ChatGPT Plus + Claude Pro 병행', '⚡', 'pro', 0,
-      '다양한 업무에 AI를 적극 활용하시는 패턴에는 ChatGPT Plus와 Claude Pro 조합이 실용적입니다. 답변 덕분에 글룩이 멀티 도구 전략에 맞는 예산을 수립할 수 있게 되었습니다.',
+      `다양한 업무에 AI를 적극 활용하시는 패턴에는 ChatGPT Plus와 Claude Pro 조합이 실용적입니다. ${TAIL}`,
       ['ChatGPT Plus', 'Claude Pro'],
     );
   }
@@ -324,13 +389,13 @@ function getRecommendation(answers) {
     if (volume === 'long' && (frequency === 'heavy' || frequency === 'daily')) {
       return rec(
         'Cursor Pro', '⌨️', 'pro', 180000,
-        `${painLabel}을 고려하면 IDE 통합 코딩 도구 Cursor Pro가 정답입니다. 백엔드로 Claude·GPT-5를 모두 사용할 수 있어 모델 선택의 유연성도 확보됩니다. 답변 덕분에 글룩이 개발 생산성에 맞춰 도구를 정확히 배치할 수 있게 되었습니다.`,
+        `${painLabel}을 고려하면 IDE 통합 코딩 도구 Cursor Pro가 정답입니다. 백엔드로 Claude·GPT-5를 모두 사용할 수 있어 모델 선택의 유연성도 확보됩니다. ${TAIL}`,
         ['Cursor Pro', 'Claude Pro'],
       );
     }
     return rec(
       'Claude Pro', '⚡', 'pro', 180000,
-      `${painLabel}을 고려하면 Claude Pro가 가장 확실한 선택입니다. 2026년 기준 코딩 문맥 파악과 긴 코드베이스 이해력에서 압도적입니다. 답변 덕분에 글룩이 개발 도구를 정확히 배치할 수 있게 되었습니다.`,
+      `${painLabel}을 고려하면 Claude Pro가 가장 확실한 선택입니다. 2026년 기준 코딩 문맥 파악과 긴 코드베이스 이해력에서 압도적입니다. ${TAIL}`,
       ['Claude Pro', 'ChatGPT Plus'],
     );
   }
@@ -339,20 +404,20 @@ function getRecommendation(answers) {
     if (volume === 'long') {
       return rec(
         'Gemini Advanced', '📜', 'pro', 180000,
-        `긴 문서를 자주 다루시는 패턴에는 Gemini Advanced의 2M 토큰 컨텍스트가 결정적입니다. 책 한 권 통째로 던지고 요약·분석이 가능합니다. 답변 덕분에 글룩의 문서 업무 효율화 예산이 정확히 잡힐 수 있게 되었습니다.`,
+        `긴 문서를 자주 다루시는 패턴에는 Gemini Advanced의 2M 토큰 컨텍스트가 결정적입니다. 책 한 권 통째로 던지고 요약·분석이 가능합니다. ${TAIL}`,
         ['Gemini Advanced', 'Claude Pro'],
       );
     }
     if (pain === 'quality') {
       return rec(
         'Claude Pro', '📝', 'pro', 180000,
-        `응답 품질을 중요하게 보시는 패턴에는 Claude Pro가 정답입니다. 한국어 문장 자연스러움과 톤 조절에서 가장 안정적입니다. 답변 덕분에 글룩의 문서 작업 도구 선정이 명확해졌습니다.`,
+        `응답 품질을 중요하게 보시는 패턴에는 Claude Pro가 정답입니다. 한국어 문장 자연스러움과 톤 조절에서 가장 안정적입니다. ${TAIL}`,
         ['Claude Pro', 'ChatGPT Plus'],
       );
     }
     return rec(
       'ChatGPT Plus', '💬', 'pro', 180000,
-      `다양한 글쓰기 작업에는 ChatGPT Plus가 가장 친숙하고, GPTs로 반복 업무 자동화까지 가능합니다. 답변 덕분에 글룩의 실용적 도구 선정 기준이 세워졌습니다.`,
+      `다양한 글쓰기 작업에는 ChatGPT Plus가 가장 친숙하고, GPTs로 반복 업무 자동화까지 가능합니다. ${TAIL}`,
       ['ChatGPT Plus', 'Claude Pro'],
     );
   }
@@ -360,7 +425,7 @@ function getRecommendation(answers) {
   if (primary === 'research') {
     return rec(
       'Perplexity Pro', '🔎', 'pro', 180000,
-      `리서치 중심의 사용 패턴에는 Perplexity Pro의 Deep Research가 최적입니다. 5~10분 만에 보고서 수준의 출처 기반 결과를 만들어줍니다. 답변 덕분에 글룩의 리서치 업무 효율화 방향이 명확해졌습니다.`,
+      `리서치 중심의 사용 패턴에는 Perplexity Pro의 Deep Research가 최적입니다. 5~10분 만에 보고서 수준의 출처 기반 결과를 만들어줍니다. ${TAIL}`,
       ['Perplexity Pro', 'Claude Pro'],
     );
   }
@@ -369,22 +434,15 @@ function getRecommendation(answers) {
     if (wantsVideo) {
       return rec(
         'Runway 또는 Sora', '🎬', 'pro', 180000,
-        `영상 생성 작업을 시작하시는 패턴이라면 Runway($15/월) 또는 ChatGPT Plus 안에서 쓰는 Sora가 정답입니다. 답변 덕분에 글룩의 영상 콘텐츠 도구 도입 방향이 정해졌습니다.`,
+        `영상 생성 작업을 시작하시는 패턴이라면 Runway($15/월) 또는 ChatGPT Plus 안에서 쓰는 Sora가 정답입니다. ${TAIL}`,
         ['Runway', 'Sora'],
         '이미 ChatGPT Plus를 쓰고 계신다면 Sora가 추가 비용 없이 사용 가능',
       );
     }
-    if (pain === 'quality') {
-      return rec(
-        'Midjourney', '🎨', 'pro', 150000,
-        `이미지 품질을 최우선으로 두시는 패턴에는 Midjourney가 정답입니다. 예술적 퀄리티에서 압도적이며, 디자인·콘셉트 작업에 가장 적합합니다. 답변 덕분에 글룩의 디자인 영역 도구 선정이 명확해졌습니다.`,
-        ['Midjourney', 'ChatGPT Plus'],
-      );
-    }
     return rec(
       'ChatGPT Plus', '🖼️', 'pro', 180000,
-      `이미지 생성에는 ChatGPT Plus의 DALL-E로 충분합니다. 텍스트·이미지·음성을 한 구독으로 통합 사용할 수 있어 가장 가성비가 좋습니다. 답변 덕분에 글룩의 비주얼 업무 예산이 정확히 잡혔습니다.`,
-      ['ChatGPT Plus', 'Midjourney'],
+      `이미지 생성에는 ChatGPT Plus의 DALL-E 3로 충분합니다. 텍스트·이미지·음성을 한 구독으로 통합 사용할 수 있어 가장 가성비가 좋습니다. ${TAIL}`,
+      ['ChatGPT Plus', 'Runway'],
     );
   }
 
@@ -392,20 +450,20 @@ function getRecommendation(answers) {
   if (has('chatgpt') && !has('gemini') && !has('claude')) {
     return rec(
       'Claude Pro 또는 Gemini Advanced', '🆕', 'pro', 180000,
-      `이미 ChatGPT를 잘 쓰고 계시니, Claude Pro(자연스러운 글쓰기·추론)나 Gemini Advanced(긴 컨텍스트·Google 연동) 중 하나를 추가로 시도해보시는 것을 추천드립니다. 답변 덕분에 글룩의 도구 다양화 전략이 명확해졌습니다.`,
+      `이미 ChatGPT를 잘 쓰고 계시니, Claude Pro(자연스러운 글쓰기·추론)나 Gemini Advanced(긴 컨텍스트·Google 연동) 중 하나를 추가로 시도해보시는 것을 추천드립니다. ${TAIL}`,
       ['Claude Pro', 'Gemini Advanced'],
     );
   }
   if (has('claude') && !has('chatgpt') && !has('gemini')) {
     return rec(
       'ChatGPT Plus', '💬', 'pro', 180000,
-      `이미 Claude를 잘 쓰고 계시니, ChatGPT Plus를 추가하시면 GPTs·DALL-E·음성까지 도구 폭이 크게 넓어집니다. 답변 덕분에 글룩의 도구 다양화 전략이 명확해졌습니다.`,
+      `이미 Claude를 잘 쓰고 계시니, ChatGPT Plus를 추가하시면 GPTs·DALL-E·음성까지 도구 폭이 크게 넓어집니다. ${TAIL}`,
       ['ChatGPT Plus', 'Gemini Advanced'],
     );
   }
   return rec(
     'ChatGPT Plus', '💬', 'pro', 180000,
-    `범용 사용에는 ChatGPT Plus 하나로 대부분의 업무가 커버됩니다. ${painLabel}도 유료 구독으로 대부분 풀립니다. 답변 덕분에 글룩의 실용적 AI 예산 기준이 세워졌습니다.`,
+    `범용 사용에는 ChatGPT Plus 하나로 대부분의 업무가 커버됩니다. ${painLabel}도 유료 구독으로 대부분 풀립니다. ${TAIL}`,
     ['ChatGPT Plus', 'Claude Pro'],
   );
 }
@@ -429,9 +487,11 @@ function getMaturity(answers) {
   const q1Max = q1Arr.reduce((m, v) => Math.max(m, q1ScoreMap[v] || 0), 0);
   score += q1Max;
 
-  // Q4 (pain point) — 사용 숙련도 간접 반영
-  const q4Map = { never: 0, none: 5, quality: 8, limit: 10, context: 12 };
-  score += q4Map[answers.q4] || 0;
+  // Q4 (pain point, 다중) — 가장 높은 점수만 반영
+  const q4ScoreMap = { never: 0, none: 5, quality: 8, limit: 10, context: 12 };
+  const q4Arr = toArr(answers.q4);
+  const q4Max = q4Arr.reduce((m, v) => Math.max(m, q4ScoreMap[v] || 0), 0);
+  score += q4Max;
 
   // Q5 (현재 사용 중인 AI 수) — 도구 다양성
   const q5Arr = toArr(answers.q5).filter((v) => v !== 'none');
@@ -458,37 +518,115 @@ function getTips(answers) {
 
   if (wantsVideo) {
     return [
-      '영상은 짧게 시작하세요. 5초 단위 클립을 만든 뒤 편집툴(CapCut/Premiere)에서 합치는 게 안정적입니다',
-      '이미지→영상이 텍스트→영상보다 결과가 일관됩니다. Midjourney/DALL-E로 키 프레임 먼저 만들고 Runway/Sora에 업로드',
-      "프롬프트에 카메라 움직임(zoom in, pan right, dolly out)을 명시하면 의도대로 나옵니다",
+      {
+        title: '짧은 클립부터, 나눠서 만들기',
+        body: '영상은 5초 단위 클립을 따로따로 생성한 뒤 CapCut·Premiere 같은 편집툴에서 합치는 게 가장 안정적입니다. 한 번에 30초짜리를 만들려고 하면 중간에 캐릭터·배경이 흔들려서 다시 작업해야 할 확률이 높아져요. "5초씩 6컷 = 30초 영상" 으로 접근하세요.',
+      },
+      {
+        title: '이미지→영상이 정답',
+        body: '텍스트로 바로 영상을 만들면 결과가 들쭉날쭉합니다. ChatGPT(DALL-E 3)로 원하는 분위기의 키 프레임 이미지를 먼저 뽑은 뒤, 그 이미지를 Runway·Sora에 업로드해서 "이걸 자연스럽게 움직이게 해줘"라고 요청하세요. 인물·배경 일관성이 비교가 안 됩니다.',
+      },
+      {
+        title: '카메라 워크를 프롬프트에 명시',
+        body: '"카메라가 천천히 줌인" "왼쪽에서 오른쪽으로 패닝" "공중에서 아래로 내려오는 드론샷" 처럼 영상 용어를 직접 적어주세요. 영어로 zoom in / pan right / dolly out / aerial shot 등도 잘 통합니다. 막연히 "역동적으로" 라고만 하면 의도와 다른 결과가 나와요.',
+      },
+      {
+        title: 'BGM·자막은 무료 도구로',
+        body: '영상 자체는 AI로 만들고, BGM은 Suno(무료)나 유튜브 오디오 라이브러리, 자막은 Vrew·CapCut 자동 자막을 쓰면 무료 영역에서 모든 후반 작업이 끝납니다. 이 조합만 익혀도 단가 50만원짜리 외주 결과물 정도는 사내에서 만들 수 있어요.',
+      },
     ];
   }
 
   const tips = {
     coding: [
-      "파일 전체를 복사해서 붙여넣고 '리팩토링 관점에서 리뷰해줘'라고 요청하세요",
-      "에러 로그 전체를 주고 '왜 발생했고 어떻게 고칠지 단계별로 설명해줘'라고 하세요",
-      'Claude Code CLI를 쓰면 터미널에서 바로 프로젝트 전체 작업이 가능합니다',
+      {
+        title: '파일 전체를 통째로 던져서 리뷰받기',
+        body: '함수 하나만 복사하지 말고 파일 전체(또는 관련 파일 2~3개)를 한 번에 붙여넣고 "이 코드를 (1) 성능 (2) 가독성 (3) 잠재 버그 3가지 관점으로 리뷰해줘"라고 요청하세요. 막연히 "좋게 해줘"라고 하면 결과가 산만해집니다. 리뷰를 받은 뒤엔 "2번 항목부터 고쳐줘" 식으로 한 항목씩 적용하세요.',
+      },
+      {
+        title: '에러는 로그 전체 + 맥락까지',
+        body: '에러 메시지 한 줄만 던지지 말고 전체 스택트레이스 + 해당 코드 + "이 함수가 어떤 상황에서 호출되는지"까지 같이 주세요. 그리고 "왜 발생했는지 → 단계별 해결책 3개 → 각 해결책의 트레이드오프"순으로 답해달라고 요청하면 단순 복붙이 아니라 원인을 이해하게 됩니다.',
+      },
+      {
+        title: 'Claude Code CLI로 프로젝트 통째로 작업',
+        body: '브라우저에서 코드 복붙 왕복은 비효율적입니다. Claude Code CLI를 터미널에 설치하면 "src 폴더 전체에서 deprecated된 API 다 찾아서 새 API로 마이그레이션해줘" 같은 명령이 한 번에 실행됩니다. Cursor도 비슷한 역할인데 IDE 안에서 동작해요.',
+      },
+      {
+        title: '테스트 코드부터 짜달라고 하기',
+        body: '기능 구현 전에 "이 요구사항에 대한 테스트 케이스 먼저 5개 만들어줘"를 시키고, 그 테스트가 통과하도록 구현을 부탁하세요. AI는 명세가 명확할수록 결과가 좋아지는데, 테스트 코드가 가장 좋은 명세입니다. 결과물 품질이 눈에 띄게 올라갑니다.',
+      },
     ],
     writing: [
-      "초안을 먼저 쓰고 '더 간결하게 / 더 전문적 톤으로' 등 방향 지시로 다듬으세요",
-      '긴 보고서는 개요부터 잡고 섹션별로 나눠 작성하면 일관성이 유지됩니다',
-      "'다음 글을 ~를 위한 1페이지 요약으로' 같은 대상+형식 지시가 효과적입니다",
+      {
+        title: '초안 → 방향 지시로 다듬기',
+        body: '처음부터 완벽한 결과물을 기대하지 말고, 일단 거친 초안을 받은 뒤 "더 간결하게 / 더 전문적 톤으로 / 임원 보고용으로 / 친근하게" 같은 방향 지시로 다듬으세요. 한 번에 다 시키면 평이한 결과가 나오지만, 2~3번 다듬으면 사람이 쓴 것처럼 자연스러워집니다.',
+      },
+      {
+        title: '긴 보고서는 개요부터',
+        body: '20장짜리 보고서를 한 번에 부탁하면 일관성이 무너집니다. 먼저 "이 주제로 보고서 목차를 5단계 깊이로 짜줘" → 목차 확정 → 섹션별로 따로 본문 작성 → 마지막에 "전체 톤 통일해줘"로 마무리하세요. 결과물 품질 차이가 큽니다.',
+      },
+      {
+        title: '"대상 + 형식" 지시가 핵심',
+        body: '"잘 써줘"는 막연합니다. "다음 내용을 (1) 신입사원 (2) 임원 (3) 외부 고객 — 각 대상별로 (1) 1페이지 요약 (2) 3줄 요약 (3) 카카오톡 메시지" 식으로 대상과 형식을 명시하세요. 같은 내용도 완전히 다른 글로 나옵니다.',
+      },
+      {
+        title: '"왜 이렇게 썼는지" 묻기',
+        body: '결과물이 어딘가 어색하면 "이 문장을 왜 이렇게 썼는지 근거 3가지 대줘"라고 물어보세요. AI가 자기 선택을 설명하는 과정에서 "더 나은 대안"이 나오는 경우가 많습니다. 비판적 사고를 유도하는 가장 강력한 프롬프트입니다.',
+      },
     ],
     research: [
-      'Perplexity로 최신 정보 검색 → Claude로 심층 분석 조합이 베스트입니다',
-      "'이 주장에 반대되는 증거도 찾아서 양쪽 관점을 정리해줘'로 편향을 줄이세요",
-      "논문은 PDF 업로드 후 '핵심 주장, 방법론, 한계점 3가지로 정리'를 요청하세요",
+      {
+        title: 'Perplexity 검색 → Claude 분석',
+        body: '최신 정보(시장 동향·통계·뉴스)는 Perplexity로 출처와 함께 가져오고, 그 자료를 Claude에 던져서 "이걸 핵심 주장 3가지로 정리하고, 각 주장의 한계점도 짚어줘"라고 분석하세요. Perplexity는 검색에 강하고 Claude는 추론에 강해서, 둘을 분업시키면 한 도구로 다 하는 것보다 결과가 좋습니다.',
+      },
+      {
+        title: '편향 차단 프롬프트',
+        body: '리서치 결과를 그대로 믿지 말고 "이 주장에 반대되는 증거도 찾아서 양쪽 관점을 정리해줘" 또는 "이 결론의 한계점·반례 5가지를 들어봐"를 추가로 요청하세요. AI는 첫 답변에서 한쪽 관점만 강조하는 경향이 있어서, 이걸로 균형을 맞춰야 합니다.',
+      },
+      {
+        title: '논문은 PDF째로 + 구조 요청',
+        body: 'Claude에 논문 PDF를 업로드하고 "(1) 핵심 주장 (2) 방법론 (3) 한계점 — 3가지로 정리하고, 마지막에 이 논문을 한 줄로 요약해줘"라고 요청하세요. 자유 형식 요약보다 구조를 정해주면 누락이 없고 비교하기 쉽습니다.',
+      },
+      {
+        title: '"내가 모르는 것"을 묻기',
+        body: '"이 주제에서 내가 놓치고 있을 만한 관점·반례·연관 분야는?"이라고 물어보세요. 자기가 아는 것만 검색하면 시야가 좁아지는데, AI가 인접 영역을 짚어주면 리서치 깊이가 한 단계 올라갑니다. 보고서 마무리 단계에 항상 던져보세요.',
+      },
     ],
     image: [
-      "프롬프트에 '스타일: ~, 조명: ~, 구도: ~'처럼 구체적 속성을 명시하세요",
-      "레퍼런스 이미지를 업로드하고 '이런 느낌으로'라고 지시하면 정확도가 올라갑니다",
-      "첫 결과가 마음에 안 들면 전체 다시 말고 '조명만 따뜻하게' 식 부분 수정으로 좁히세요",
+      {
+        title: '"스타일·조명·구도" 3종 세트',
+        body: '"멋진 그림 그려줘"는 노이즈가 큽니다. "스타일: 미드센추리 모던 / 조명: 따뜻한 골든아워 / 구도: 로우앵글 와이드샷" 처럼 3가지 속성을 정리해서 적으세요. 결과물 일관성이 크게 올라갑니다. 매번 처음부터 쓰지 말고 본인 자주 쓰는 조합을 메모해두세요.',
+      },
+      {
+        title: '레퍼런스 이미지 업로드가 정답',
+        body: '말로 설명하는 것보다 "이런 느낌으로"가 100배 정확합니다. 핀터레스트·구글에서 비슷한 톤의 이미지 1~2장 찾아서 ChatGPT에 업로드하고 "이 분위기로 [원하는 주제]를 그려줘"라고 하면 첫 시도부터 결과가 다릅니다.',
+      },
+      {
+        title: '부분 수정으로 좁혀가기',
+        body: '첫 결과가 80% 마음에 들면 처음부터 다시 그리지 말고 "조명만 좀 더 따뜻하게" "오른쪽 인물 표정만 미소로" 같은 부분 수정 지시를 쓰세요. 매번 새로 그리면 좋았던 부분도 같이 사라집니다. 좋은 결과는 "절반의 우연"이라 보존이 중요해요.',
+      },
+      {
+        title: '한국어보다 영어 프롬프트가 정확',
+        body: '대부분 이미지 생성 모델이 영어 데이터로 학습돼서 영어 프롬프트가 결과가 더 정확합니다. 한국어로 먼저 원하는 그림을 ChatGPT에 설명하고 "이 설명을 이미지 생성에 최적화된 영어 프롬프트로 바꿔줘"를 시키면 자연스럽게 영어 프롬프트가 나옵니다.',
+      },
     ],
     general: [
-      '질문을 짧게 나눠서 던지면 답변 품질이 올라갑니다',
-      "'~를 모르는 사람에게 설명해줘' 같은 페르소나 지정이 효과적입니다",
-      "답변이 애매하면 '구체적 예시 3개와 함께'라고 덧붙이세요",
+      {
+        title: '질문을 잘게 나누기',
+        body: '"마케팅 전략 짜줘" 같은 큰 질문은 결과가 평이합니다. "(1) 우리 제품 타겟층 분석 → (2) 그 타겟층의 페인 포인트 → (3) 각 페인 포인트별 메시지" 처럼 3~4단계로 나눠서 던지면 답변 깊이가 완전히 달라집니다. 한 번에 다 시키지 마세요.',
+      },
+      {
+        title: '"~를 모르는 사람에게" 페르소나',
+        body: '복잡한 개념을 이해하고 싶을 때 "이걸 (1) 초등학생 (2) 비전공자 임원 (3) 고등학교 후배에게 설명해줘" 식으로 페르소나를 지정하세요. 같은 내용이 완전히 다른 깊이로 풀려서 본인이 어디까지 이해하고 어디서 막히는지 명확해집니다.',
+      },
+      {
+        title: '애매한 답엔 "구체적 예시 3개"',
+        body: 'AI 답변이 추상적이면 "구체적 예시 3개와 함께" "실제 사례 3가지로 다시 설명해줘"를 덧붙이세요. 추상→구체 변환은 AI가 잘하는 영역이라, 이거 하나만 추가해도 답변 활용도가 2배 올라갑니다.',
+      },
+      {
+        title: '대화창 하나에서 맥락 이어가기',
+        body: '같은 주제는 새 대화창 만들지 말고 한 대화창에서 계속 이어가세요. AI는 대화 초반의 맥락을 끝까지 기억하고 활용합니다. 새 대화로 넘어가면 매번 같은 배경 설명을 반복해야 하니 비효율적이에요.',
+      },
     ],
   };
   return tips[primary] || tips.general;
@@ -498,6 +636,7 @@ function getTips(answers) {
 // 웹훅 전송 (POST, no-cors)
 // ============================================================
 async function sendWebhook(payload) {
+  saveLocal(payload);  // 항상 로컬에도 백업 저장 (관리자 페이지 폴백용)
   if (!WEBHOOK_URL || WEBHOOK_URL === 'YOUR_APPS_SCRIPT_URL') return;
   try {
     await fetch(WEBHOOK_URL, {
@@ -548,14 +687,14 @@ export default function AIRecommender() {
 
 // ============================================================
 // 진단 모드
-// Step: 0=intro, 1=name(+team+role), 2=q1, 3=q2, 4=q3, 5=q4, 6=q5, 7=q6, 8=loading, 9=result
-// Progress: 1~7 / 7
+// Step: 0=intro, 1=name, 2=welcome(+team+role), 3=q1, 4=q2, 5=q3, 6=q4, 7=q5, 8=q6, 9=loading, 10=result
+// Progress: 1~8 / 8
 // ============================================================
 function SurveyMode() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({
     name: '', team: '', role: '',
-    q1: [], q2: '', q3: '', q4: '', q5: [], q6: '',
+    q1: [], q2: '', q3: '', q4: [], q5: [], q5Other: '', q6: '',
   });
   const [result, setResult] = useState(null);
 
@@ -565,7 +704,7 @@ function SurveyMode() {
   const prev = () => setStep((s) => Math.max(0, s - 1));
   const restart = () => {
     setStep(0);
-    setAnswers({ name: '', team: '', role: '', q1: [], q2: '', q3: '', q4: '', q5: [], q6: '' });
+    setAnswers({ name: '', team: '', role: '', q1: [], q2: '', q3: '', q4: [], q5: [], q5Other: '', q6: '' });
     setResult(null);
   };
 
@@ -574,9 +713,9 @@ function SurveyMode() {
     setTimeout(next, 220);
   };
 
-  // Step 8 로딩 진입 시 결과 계산 + 웹훅
+  // Step 9 로딩 진입 시 결과 계산 + 웹훅
   useEffect(() => {
-    if (step !== 8) return;
+    if (step !== 9) return;
     const rec = getRecommendation(answers);
     const mat = getMaturity(answers);
     setResult({ ...rec, maturityScore: mat.score, maturityLabel: mat.label, maturityEmoji: mat.emoji });
@@ -586,8 +725,9 @@ function SurveyMode() {
       team: answers.team,
       role: answers.role || '',
       q1: toArr(answers.q1).join(', '),
-      q2: answers.q2, q3: answers.q3, q4: answers.q4,
-      q5: toArr(answers.q5).join(', '),
+      q2: answers.q2, q3: answers.q3,
+      q4: toArr(answers.q4).join(', '),
+      q5: toArr(answers.q5).map((v) => v === 'other' && answers.q5Other ? `기타(${answers.q5Other})` : v).join(', '),
       q6: answers.q6,
       recommendedAi: rec.ai,
       recommendedTier: rec.tier,
@@ -596,13 +736,13 @@ function SurveyMode() {
       maturityLabel: mat.label,
     });
 
-    const t = setTimeout(() => setStep(9), 1800);
+    const t = setTimeout(() => setStep(10), 1800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
-  const progressStep = step >= 1 && step <= 7 ? step : step >= 8 ? 7 : 0;
-  const showProgress = step >= 1 && step <= 7;
+  const progressStep = step >= 1 && step <= 8 ? step : step >= 9 ? 8 : 0;
+  const showProgress = step >= 1 && step <= 8;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -610,10 +750,10 @@ function SurveyMode() {
         <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200">
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
             <div className="text-xs font-medium text-slate-500 tabular-nums">
-              {progressStep}/7
+              {progressStep}/8
             </div>
             <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${(progressStep / 7) * 100}%` }} />
+              <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${(progressStep / 8) * 100}%` }} />
             </div>
           </div>
         </div>
@@ -624,42 +764,61 @@ function SurveyMode() {
           {step === 0 && <Intro onStart={next} />}
           {step === 1 && (
             <NameStep
-              name={answers.name} team={answers.team} role={answers.role}
-              onName={(v) => setField('name', v)}
-              onConfirm={(emp) => { setMany({ team: emp.team, role: emp.role }); next(); }}
-              onManualSubmit={(team, role) => { setMany({ team, role }); next(); }}
-              onPrev={prev}
+              value={answers.name}
+              onChange={(v) => setField('name', v)}
+              onNext={next}
             />
           )}
           {step === 2 && (
+            <WelcomeStep
+              name={answers.name}
+              team={answers.team} role={answers.role}
+              onConfirm={(emp) => { setMany({ team: emp.team, role: emp.role }); next(); }}
+              onManualSubmit={(team, role) => { setMany({ team, role }); next(); }}
+              onChangeName={() => prev()}
+              onPrev={prev}
+            />
+          )}
+          {step === 3 && (
             <MultiQuestionStep
               num="Q1" question={QUESTIONS.q1}
               values={answers.q1} onChange={(v) => setField('q1', v)}
               onNext={next} onPrev={prev}
             />
           )}
-          {step >= 3 && step <= 5 && (
+          {step >= 4 && step <= 5 && (
             <SingleQuestionStep
-              num={['Q2', 'Q3', 'Q4'][step - 3]}
-              qKey={['q2', 'q3', 'q4'][step - 3]}
-              question={QUESTIONS[['q2', 'q3', 'q4'][step - 3]]}
-              value={answers[['q2', 'q3', 'q4'][step - 3]]}
+              num={['Q2', 'Q3'][step - 4]}
+              qKey={['q2', 'q3'][step - 4]}
+              question={QUESTIONS[['q2', 'q3'][step - 4]]}
+              value={answers[['q2', 'q3'][step - 4]]}
               onSelect={selectAndNext}
               onPrev={prev}
             />
           )}
           {step === 6 && (
             <MultiQuestionStep
-              num="Q5" question={QUESTIONS.q5}
-              values={answers.q5} onChange={(v) => setField('q5', v)}
+              num="Q4" question={QUESTIONS.q4}
+              values={answers.q4} onChange={(v) => setField('q4', v)}
               onNext={next} onPrev={prev}
             />
           )}
           {step === 7 && (
+            <MultiQuestionStep
+              num="Q5" question={QUESTIONS.q5}
+              values={answers.q5} onChange={(v) => setField('q5', v)}
+              otherValue="other"
+              otherText={answers.q5Other}
+              onOtherChange={(v) => setField('q5Other', v)}
+              otherPlaceholder="예: Notion AI, Suno, ElevenLabs 등"
+              onNext={next} onPrev={prev}
+            />
+          )}
+          {step === 8 && (
             <Q6Step value={answers.q6} onChange={(v) => setField('q6', v)} onSubmit={next} onPrev={prev} />
           )}
-          {step === 8 && <LoadingStep name={answers.name} />}
-          {step === 9 && result && <ResultStep answers={answers} result={result} onRestart={restart} />}
+          {step === 9 && <LoadingStep name={answers.name} />}
+          {step === 10 && result && <ResultStep answers={answers} result={result} onRestart={restart} />}
         </div>
       </div>
     </div>
@@ -687,7 +846,7 @@ function Intro({ onStart }) {
         <div className="flex items-center justify-center gap-6 text-sm text-slate-600">
           <div><div className="text-2xl mb-1">⏱️</div><div className="font-medium">2분 내외</div></div>
           <div className="w-px h-12 bg-slate-200" />
-          <div><div className="text-2xl mb-1">📋</div><div className="font-medium">7단계 간단 진단</div></div>
+          <div><div className="text-2xl mb-1">📋</div><div className="font-medium">8단계 간단 진단</div></div>
         </div>
       </div>
 
@@ -698,36 +857,57 @@ function Intro({ onStart }) {
   );
 }
 
-// ---------- 이름 + 자동 인식 환영 인사 ----------
-function NameStep({ name, team, role, onName, onConfirm, onManualSubmit, onPrev }) {
-  const [manualMode, setManualMode] = useState(false);
-  const [manualTeam, setManualTeam] = useState(team || '');
-  const [manualRole, setManualRole] = useState(role || '');
+// ---------- Step 1: 이름만 입력 ----------
+function NameStep({ value, onChange, onNext }) {
+  const ok = (value || '').trim().length >= 2;
+  return (
+    <div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8">이름을 입력해주세요</h2>
+
+      <input type="text" value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && ok) onNext(); }}
+        placeholder="예: 홍재옥" autoFocus
+        className="w-full px-5 py-4 text-lg bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all" />
+
+      <button onClick={onNext} disabled={!ok}
+        className={`w-full mt-6 py-4 rounded-xl font-semibold transition-all ${
+          ok ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+        }`}>
+        다음 →
+      </button>
+    </div>
+  );
+}
+
+// ---------- Step 2: 환영 인사 (명단 매칭 OR 수동 입력) ----------
+function WelcomeStep({ name, team, role, onConfirm, onManualSubmit, onChangeName, onPrev }) {
   const trimmed = (name || '').trim();
   const matched = findEmployee(trimmed);
-  const minLength = trimmed.length >= 2;
+  const [manualMode, setManualMode] = useState(!matched); // 매칭 안 되면 자동으로 수동 모드
+  const [manualTeam, setManualTeam] = useState(team || '');
+  const [manualRole, setManualRole] = useState(role || '');
 
-  // 명단에 매칭된 경우 — 환영 인사 화면
+  // 매칭됨 + 수동 모드 X → 환영 인사 화면
   if (matched && !manualMode) {
     return (
       <div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">이름을 입력해주세요</h2>
-        <p className="text-slate-500 mb-6 text-sm">글룩 임직원 명단에서 자동으로 찾아드려요.</p>
+        <div className="text-xs font-mono font-bold text-slate-400 mb-2">반갑습니다 👋</div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8 leading-snug">
+          확인했어요!
+        </h2>
 
-        <input type="text" value={name}
-          onChange={(e) => onName(e.target.value)}
-          placeholder="예: 홍재옥" autoFocus
-          className="w-full px-5 py-4 text-lg bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all mb-5" />
-
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 p-6 mb-5 anim-fade-in">
-          <div className="text-3xl mb-2">👋</div>
-          <div className="text-lg sm:text-xl font-bold text-slate-900 leading-snug mb-1">
-            <span className="text-emerald-700">{matched.team} {matched.role}</span> {matched.name}님,<br />
-            반갑습니다!
+        <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 p-7 mb-5 text-center anim-fade-in">
+          <div className="text-5xl mb-3">👋</div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 text-emerald-800 text-xs font-semibold mb-3">
+            {matched.team} · {matched.role}
           </div>
-          <p className="text-sm text-slate-600 mt-3 leading-relaxed">
+          <div className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug mb-3">
+            {matched.name}님, 반갑습니다!
+          </div>
+          <p className="text-sm text-slate-600 leading-relaxed">
             글룩 AI 진단에 함께해주셔서 감사합니다.<br />
-            잠깐의 시간이 글룩의 합리적인 AI 예산 수립에 큰 힘이 됩니다.
+            잠깐의 시간이 글룩의 합리적인 AI 예산 수립에<br className="sm:hidden" /> 큰 힘이 됩니다.
           </p>
         </div>
 
@@ -737,7 +917,7 @@ function NameStep({ name, team, role, onName, onConfirm, onManualSubmit, onPrev 
           </button>
           <button onClick={() => onConfirm(matched)}
             className="flex-1 py-4 rounded-xl font-semibold bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5 transition-all">
-            네, 시작할게요 →
+            진단 시작하기 →
           </button>
         </div>
 
@@ -749,80 +929,50 @@ function NameStep({ name, team, role, onName, onConfirm, onManualSubmit, onPrev 
     );
   }
 
-  // 명단에 없는 경우 또는 직접 입력 모드
-  if (manualMode) {
-    const okManual = trimmed.length >= 2 && manualTeam;
-    return (
-      <div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">정보를 직접 입력해주세요</h2>
-        <p className="text-slate-500 mb-6 text-sm">팀별 분석에 활용됩니다.</p>
-
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
-          이름 <span className="text-rose-500">*</span>
-        </label>
-        <input type="text" value={name}
-          onChange={(e) => onName(e.target.value)}
-          placeholder="이름"
-          className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all mb-5" />
-
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
-          소속팀 <span className="text-rose-500">*</span>
-        </label>
-        <select value={manualTeam} onChange={(e) => setManualTeam(e.target.value)}
-          className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all mb-5">
-          <option value="">팀을 선택해주세요</option>
-          {TEAMS.map((t) => (<option key={t} value={t}>{t}</option>))}
-        </select>
-
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
-          직책 <span className="text-slate-400 text-xs">(선택)</span>
-        </label>
-        <input type="text" value={manualRole} onChange={(e) => setManualRole(e.target.value)}
-          placeholder="예: 팀장, 책임, 선임, 주임, 사원 등"
-          className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all" />
-
-        <div className="flex gap-3 mt-8">
-          <button onClick={() => setManualMode(false)} className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
-            <ArrowLeft size={16} /> 명단으로
-          </button>
-          <button onClick={() => okManual && onManualSubmit(manualTeam, manualRole)} disabled={!okManual}
-            className={`flex-1 py-4 rounded-xl font-semibold transition-all ${okManual ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
-            다음 →
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // 기본: 이름 입력 화면
+  // 수동 입력 모드 (명단 미매칭 또는 사용자가 직접 입력 선택)
+  const okManual = !!manualTeam;
   return (
     <div>
-      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">이름을 입력해주세요</h2>
-      <p className="text-slate-500 mb-8 text-sm">글룩 임직원 명단에서 자동으로 찾아드려요.</p>
-
-      <input type="text" value={name}
-        onChange={(e) => onName(e.target.value)}
-        placeholder="예: 홍재옥" autoFocus
-        className="w-full px-5 py-4 text-lg bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all" />
-
-      {minLength && !matched && (
-        <div className="mt-4 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 leading-relaxed anim-fade-in">
+      <div className="text-xs font-mono font-bold text-slate-400 mb-2">소속 입력</div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">소속을 알려주세요</h2>
+      {!matched && (
+        <div className="mb-6 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 leading-relaxed">
           <div className="flex items-start gap-2">
             <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <div className="font-medium mb-1">"{trimmed}"님은 명단에서 찾지 못했어요.</div>
-              <div className="text-xs text-amber-800/80">오타가 있는지 확인해보시거나, 아래 버튼으로 직접 입력해주세요.</div>
+              <div className="font-medium">"{trimmed}"님은 임직원 명단에서 찾지 못했어요.</div>
+              <div className="text-xs text-amber-800/80 mt-1">오타가 있다면 <button onClick={onChangeName} className="underline font-medium">이름 수정하기</button>, 아니면 아래에서 직접 입력해주세요.</div>
             </div>
           </div>
         </div>
       )}
 
-      {minLength && !matched && (
-        <button onClick={() => setManualMode(true)}
-          className="w-full mt-4 py-3 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 transition-all text-sm font-medium">
-          직접 입력하기 →
+      <label className="block text-sm font-semibold text-slate-700 mb-2">
+        소속팀 <span className="text-rose-500">*</span>
+      </label>
+      <select value={manualTeam} onChange={(e) => setManualTeam(e.target.value)}
+        className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all mb-5">
+        <option value="">팀을 선택해주세요</option>
+        {TEAMS.map((t) => (<option key={t} value={t}>{t}</option>))}
+      </select>
+
+      <label className="block text-sm font-semibold text-slate-700 mb-2">
+        직책 <span className="text-slate-400 text-xs">(선택)</span>
+      </label>
+      <input type="text" value={manualRole} onChange={(e) => setManualRole(e.target.value)}
+        placeholder="예: 팀장, 책임, 선임, 주임, 사원 등"
+        className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all" />
+
+      <div className="flex gap-3 mt-8">
+        <button onClick={matched ? () => setManualMode(false) : onPrev}
+          className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
+          <ArrowLeft size={16} /> 이전
         </button>
-      )}
+        <button onClick={() => okManual && onManualSubmit(manualTeam, manualRole)} disabled={!okManual}
+          className={`flex-1 py-4 rounded-xl font-semibold transition-all ${okManual ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+          다음 →
+        </button>
+      </div>
     </div>
   );
 }
@@ -861,10 +1011,11 @@ function SingleQuestionStep({ num, qKey, question, value, onSelect, onPrev }) {
   );
 }
 
-// ---------- 다중 선택 (Q1, Q5) ----------
-function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev }) {
+// ---------- 다중 선택 (Q1, Q4, Q5) ----------
+function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev, otherValue, otherText, onOtherChange, otherPlaceholder }) {
   const current = Array.isArray(values) ? values : [];
   const exclusive = question.exclusive || [];
+  const showOther = otherValue && current.includes(otherValue);
 
   const toggle = (v) => {
     let next;
@@ -880,7 +1031,7 @@ function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev }) 
     onChange(next);
   };
 
-  const ok = current.length > 0;
+  const ok = current.length > 0 && (!showOther || (otherText || '').trim().length > 0);
 
   return (
     <div>
@@ -909,6 +1060,21 @@ function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev }) 
           );
         })}
       </div>
+
+      {showOther && (
+        <div className="mt-4 anim-fade-in">
+          <label className="block text-xs font-semibold text-slate-700 mb-2">
+            기타 도구 이름을 적어주세요 <span className="text-rose-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={otherText || ''}
+            onChange={(e) => onOtherChange(e.target.value)}
+            placeholder={otherPlaceholder || '예: Notion AI, Suno, ElevenLabs 등'}
+            className="w-full px-5 py-3 text-base bg-white border border-slate-200 rounded-xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all"
+          />
+        </div>
+      )}
 
       <div className="flex gap-3 mt-8">
         <button onClick={onPrev} className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
@@ -1035,30 +1201,23 @@ function ResultStep({ answers, result, onRestart }) {
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">🛠️ 고민 맞춤 활용 팁</h3>
-        <p className="text-sm text-slate-500 italic mb-4 px-3 py-2 bg-slate-50 rounded-lg">
+        <p className="text-sm text-slate-500 italic mb-5 px-3 py-2 bg-slate-50 rounded-lg">
           “{userText.length > 60 ? userText.slice(0, 60) + '…' : userText}”
         </p>
-        <ul className="space-y-3">
+        <ol className="space-y-5">
           {tips.map((t, i) => (
-            <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
-              <span className="shrink-0 text-slate-900 font-bold">▹</span>
-              <span>{t}</span>
+            <li key={i} className="flex gap-4">
+              <span className="shrink-0 w-7 h-7 rounded-full bg-slate-900 text-white grid place-items-center text-xs font-bold">
+                {i + 1}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-slate-900 text-sm mb-1.5">{t.title}</div>
+                <div className="text-sm text-slate-600 leading-relaxed">{t.body}</div>
+              </div>
             </li>
           ))}
-        </ul>
+        </ol>
       </div>
-
-      {result.savings > 0 && (
-        <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 p-6 text-center">
-          <div className="text-xs uppercase tracking-wider text-emerald-600 font-semibold mb-2">예상 효율화 효과</div>
-          <div className="text-3xl font-black text-emerald-700 mb-2 tabular-nums">
-            연간 약 {result.savings.toLocaleString('ko-KR')}원
-          </div>
-          <p className="text-sm text-emerald-700/80 leading-relaxed">
-            이번 진단을 통해 글룩이 구독료를 효율화할 수 있는 근거가 확보되었습니다.
-          </p>
-        </div>
-      )}
 
       <div className="text-center pt-4">
         <button onClick={onRestart}
@@ -1078,25 +1237,37 @@ function AdminMode() {
   const [authed, setAuthed] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [fetchErr, setFetchErr] = useState('');
+  const [source, setSource] = useState('local'); // 'local' | 'webhook'
+  const useWebhook = WEBHOOK_URL && WEBHOOK_URL !== 'YOUR_APPS_SCRIPT_URL';
 
   const fetchData = async () => {
-    if (!WEBHOOK_URL || WEBHOOK_URL === 'YOUR_APPS_SCRIPT_URL') {
-      setFetchErr('WEBHOOK_URL이 아직 설정되지 않았습니다. 아래 CSV 업로드를 이용하시거나 관리자에게 문의해주세요.');
-      return;
-    }
     setLoading(true);
-    setFetchErr('');
-    try {
-      const res = await fetch(WEBHOOK_URL + '?action=list', { method: 'GET' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      if (!Array.isArray(json)) throw new Error('invalid response shape');
-      setData(json);
-    } catch (e) {
-      setFetchErr('자동 불러오기에 실패했습니다. Apps Script의 doGet 배포 상태를 확인하시거나, 아래 CSV 업로드를 이용해주세요.');
-    } finally {
-      setLoading(false);
+    if (useWebhook) {
+      try {
+        const res = await fetch(WEBHOOK_URL + '?action=list', { method: 'GET' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+        if (!Array.isArray(json)) throw new Error('invalid response shape');
+        setData(json);
+        setSource('webhook');
+        setLoading(false);
+        return;
+      } catch (e) {
+        // fallthrough to local
+      }
+    }
+    setData(loadLocal());
+    setSource('local');
+    setLoading(false);
+  };
+
+  const handleDelete = (id) => {
+    if (source === 'local') {
+      deleteLocal(id);
+      setData(loadLocal());
+    } else {
+      // 웹훅 모드: 화면에서만 제거 (시트에서 영구 삭제하려면 doDelete API 추가 필요)
+      setData((prev) => prev.filter((r) => r._id !== id));
     }
   };
 
@@ -1107,8 +1278,8 @@ function AdminMode() {
 
   if (!authed) return <AdminLogin onAuth={() => setAuthed(true)} />;
   if (loading) return <AdminLoading />;
-  if (data) return <AdminDashboard data={data} onRefresh={fetchData} onReset={() => setData(null)} />;
-  return <AdminUpload onUploaded={setData} fetchErr={fetchErr} onRetry={fetchData} />;
+  if (data) return <AdminDashboard data={data} source={source} onRefresh={fetchData} onDelete={handleDelete} onReset={() => setData(null)} />;
+  return <AdminLoading />;
 }
 
 function AdminLogin({ onAuth }) {
@@ -1245,7 +1416,107 @@ function teamGrade(avg) {
 const Q1_LABEL = { coding: '코딩 및 개발', writing: '문서 작성', general: '일상 사용', image: '이미지 생성', research: '학술 연구' };
 const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', none: '부족함 없음', never: '미사용' };
 
-function AdminDashboard({ data, onRefresh, onReset }) {
+// 티어별 비용 (USD/월)
+const TIER_USD = { free: 0, pro: 20, max: 100 };
+const KRW_RATE = 1380;
+
+function teamBudget(members) {
+  const tiers = { free: 0, pro: 0, max: 0 };
+  members.forEach((m) => { if (tiers[m.tier] !== undefined) tiers[m.tier]++; });
+  const monthlyUSD = tiers.pro * TIER_USD.pro + tiers.max * TIER_USD.max;
+  return { tiers, monthlyUSD, monthlyKRW: monthlyUSD * KRW_RATE, yearlyKRW: monthlyUSD * 12 * KRW_RATE };
+}
+
+function teamMgmtAdvice(avg, tiers) {
+  if (avg >= 70) return 'AI를 깊이 활용하는 팀입니다. 전사 노하우 공유 워크숍을 진행하면 다른 팀의 활용도까지 끌어올릴 수 있습니다. Pro/Max 도입 효과가 가장 빠르게 회수되는 팀입니다.';
+  if (avg >= 50) return 'Pro 티어 일괄 도입 시 즉시 생산성 효과가 나타날 것으로 예상됩니다. 도입 후 1개월 단위로 사용량을 모니터링하면서 Max 승급 후보를 찾아주세요.';
+  if (avg >= 30) return '소수 인원에게 Pro 티어 시범 도입 후 효과 검증 → 점진적 확대가 안전합니다. 동시에 사내 무료 도구 활용 교육 1회를 권장합니다.';
+  return 'AI 도입 초기 단계입니다. 무료 도구 활용 교육부터 시작하세요. Pro 티어 도입은 사용 패턴이 확립된 이후가 비용 효율적입니다.';
+}
+
+function generateExecutiveInsights(data, byTeam, q4Map, tierCounts) {
+  const total = data.length;
+  const insights = [];
+  if (total === 0) return insights;
+
+  const avgScore = Math.round(data.reduce((s, d) => s + (Number(d.score) || 0), 0) / total);
+  const limitCount = q4Map['limit'] || 0;
+  const neverCount = q4Map['never'] || 0;
+  const noneCount = q4Map['none'] || 0;
+  const teams = Object.keys(byTeam);
+  const teamAvgs = teams.map((t) => Math.round(byTeam[t].reduce((s, m) => s + (Number(m.score) || 0), 0) / byTeam[t].length));
+  const maxAvg = teamAvgs.length ? Math.max(...teamAvgs) : 0;
+  const minAvg = teamAvgs.length ? Math.min(...teamAvgs) : 0;
+  const gap = maxAvg - minAvg;
+
+  // 1. 전사 활용 단계
+  let stage;
+  if (avgScore >= 70) stage = '숙련 단계';
+  else if (avgScore >= 50) stage = '안정 단계';
+  else if (avgScore >= 30) stage = '도입 확산 단계';
+  else stage = '도입 초기 단계';
+  insights.push({
+    icon: '📊',
+    title: `전사 AI 활용 단계: ${stage} (평균 ${avgScore}점)`,
+    body: avgScore >= 50
+      ? '유료 도구 도입 효과가 명확히 나타날 시점입니다. 헤비 사용자 중심 우선 도입 → 일반 사용자 확산 순서로 진행하면 ROI가 좋습니다.'
+      : '전사 평균 활용도가 아직 높지 않으므로, 무료 도구 활성화와 사내 교육에 우선 투자하는 것이 효율적입니다. 일부 헤비 사용자만 Pro 도입을 검토하세요.',
+  });
+
+  // 2. 한도 부족 비중
+  if (limitCount > 0) {
+    const pct = Math.round((limitCount / total) * 100);
+    const monthlyKRW = limitCount * 20 * KRW_RATE;
+    insights.push({
+      icon: pct >= 30 ? '⚠️' : '📈',
+      title: `한도 부족 응답 ${limitCount}명 (${pct}%)`,
+      body: pct >= 30
+        ? `전체의 ${pct}%가 무료 한도 부족을 호소합니다. 이들에게 Pro 티어 일괄 지원이 가장 ROI 높은 투자입니다. 예상 비용: 월 약 ${monthlyKRW.toLocaleString('ko-KR')}원.`
+        : `한도 부족 호소가 ${pct}%로 아직 부담이 크지 않습니다. 해당 인원만 선별적으로 Pro를 지원하는 게 가장 효율적입니다.`,
+    });
+  }
+
+  // 3. Max 추천자
+  if (tierCounts.max > 0) {
+    const monthlyKRW = tierCounts.max * 100 * KRW_RATE;
+    insights.push({
+      icon: '👑',
+      title: `핵심 헤비 사용자 ${tierCounts.max}명 식별`,
+      body: `Max 티어를 본전 뽑을 헤비 사용자로 진단됐습니다. 이들의 생산성이 회사 전체에 큰 영향을 주므로 우선 지원하세요. 예상 비용: 월 약 ${monthlyKRW.toLocaleString('ko-KR')}원. 도입 후 실제 사용량을 보고 1개월 단위로 Pro 다운그레이드 여부 검토 권장.`,
+    });
+  }
+
+  // 4. 미사용자 / 부족함 없음
+  if (neverCount + noneCount > 0) {
+    const pct = Math.round(((neverCount + noneCount) / total) * 100);
+    insights.push({
+      icon: '🌱',
+      title: `유료 불필요 응답 ${neverCount + noneCount}명 (${pct}%)`,
+      body: `${neverCount}명이 미사용, ${noneCount}명이 무료로 충분하다고 답했습니다. 이들에게는 유료 도구 강제 도입보다 무료 도구 활용 교육 1회가 더 효과적입니다.`,
+    });
+  }
+
+  // 5. 팀 격차
+  if (gap >= 30) {
+    insights.push({
+      icon: '⚖️',
+      title: `팀별 활용도 격차 ${gap}점`,
+      body: `최고 팀(${maxAvg}점)과 최저 팀(${minAvg}점)의 격차가 큽니다. 격차 해소를 위해 활용도가 높은 팀의 사례를 사내에 공유하는 자리(예: 점심 데모 세션)를 분기 1회 마련해보세요.`,
+    });
+  }
+
+  // 6. 권장 예산 합계
+  const monthlyUSD = tierCounts.pro * 20 + tierCounts.max * 100;
+  insights.push({
+    icon: '💰',
+    title: `전사 권장 예산: 연 약 ${(monthlyUSD * 12 * KRW_RATE).toLocaleString('ko-KR')}원`,
+    body: `Pro ${tierCounts.pro}명 + Max ${tierCounts.max}명 + 무료 ${tierCounts.free}명 기준, 월 약 ${(monthlyUSD * KRW_RATE).toLocaleString('ko-KR')}원이 적정 예산입니다. (환율 1,380원 가정) 1차 도입 → 1개월 모니터링 → 조정 순서로 진행하면 시행착오를 줄일 수 있습니다.`,
+  });
+
+  return insights;
+}
+
+function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
   const total = data.length;
 
   if (total === 0) {
@@ -1255,6 +1526,12 @@ function AdminDashboard({ data, onRefresh, onReset }) {
           <div className="text-4xl mb-3">📭</div>
           <h2 className="text-lg font-bold text-slate-900 mb-2">아직 응답이 없습니다</h2>
           <p className="text-sm text-slate-500 mb-6">팀원들이 진단을 완료하면 여기에 표시됩니다.</p>
+          {source === 'local' && (
+            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+              현재 <b>로컬 모드</b>입니다 — 이 브라우저에서 진단한 응답만 보입니다.<br />
+              여러 사람의 응답을 모으려면 Apps Script 웹훅 설정이 필요합니다.
+            </p>
+          )}
           <button onClick={onRefresh} className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold">
             <RefreshCw size={14} /> 새로고침
           </button>
@@ -1264,7 +1541,6 @@ function AdminDashboard({ data, onRefresh, onReset }) {
   }
 
   const avgScore = Math.round(data.reduce((s, d) => s + (Number(d.score) || 0), 0) / total);
-  const totalSavings = data.reduce((s, d) => s + (Number(d.savings) || 0), 0);
 
   const byTeam = {};
   data.forEach((d) => {
@@ -1285,26 +1561,50 @@ function AdminDashboard({ data, onRefresh, onReset }) {
     });
   });
 
-  // Q4 분포
+  // Q4 분포 (다중 선택)
   const q4Map = {};
   data.forEach((d) => {
-    const k = d.q4 || 'unknown';
-    q4Map[k] = (q4Map[k] || 0) + 1;
+    const items = toArr(d.q4);
+    if (items.length === 0) {
+      q4Map['unknown'] = (q4Map['unknown'] || 0) + 1;
+    } else {
+      items.forEach((item) => { q4Map[item] = (q4Map[item] || 0) + 1; });
+    }
   });
+
+  // 추천 티어 분포
+  const tierCounts = { free: 0, pro: 0, max: 0 };
+  data.forEach((d) => { if (tierCounts[d.tier] !== undefined) tierCounts[d.tier]++; });
+  const totalBudget = teamBudget(data);
+
+  // 추천 도구 채택 분포 (다중 추천 — 슬래시·플러스 분할)
+  const toolMap = {};
+  data.forEach((d) => {
+    const ai = (d.ai || '').replace(/\s*무료/g, '').replace(/Plus|Pro|Max|Advanced|Code/gi, '').trim();
+    String(d.ai || '').split(/[+/또는]/).map((s) => s.trim()).filter(Boolean).forEach((t) => {
+      const clean = t.replace(/병행/g, '').trim();
+      if (clean) toolMap[clean] = (toolMap[clean] || 0) + 1;
+    });
+  });
+
+  // 종합 인사이트 자동 생성
+  const insights = generateExecutiveInsights(data, byTeam, q4Map, tierCounts);
 
   const sorted = [...data].sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 no-print">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <h1 className="text-base sm:text-lg font-bold text-slate-900">글룩 AI 진단 보고서</h1>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900">글룩 AI 진단 보고서</h1>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${source === 'webhook' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+              {source === 'webhook' ? '시트 연동' : '로컬 모드'}
+            </span>
+          </div>
           <div className="flex gap-2">
             <button onClick={onRefresh} className="px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-all flex items-center gap-1">
               <RefreshCw size={14} /> 새로고침
-            </button>
-            <button onClick={onReset} className="px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-all flex items-center gap-1">
-              <Upload size={14} /> 초기화
             </button>
             <button onClick={() => window.print()} className="px-3 py-2 text-xs sm:text-sm bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-all flex items-center gap-1">
               <Printer size={14} /> PDF 인쇄
@@ -1314,12 +1614,68 @@ function AdminDashboard({ data, onRefresh, onReset }) {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-12">
+        {source === 'local' && (
+          <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 leading-relaxed no-print">
+            <div className="flex items-start gap-2">
+              <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-semibold mb-1">로컬 모드로 작동 중입니다</div>
+                <div className="text-xs text-amber-800/90">
+                  현재 이 브라우저에서 진단한 응답만 보입니다. 다른 컴퓨터·다른 사람의 응답을 모으려면 README의 Apps Script 웹훅 설정이 필요합니다.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ⭐ 종합 권고 - 데이터 기반 자동 분석 */}
+        <Section title="📌 글룩 AI 예산 종합 권고" icon={<Sparkles size={20} />}>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {insights.map((ins, i) => (
+              <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 print-card shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">{ins.icon}</span>
+                  <h3 className="text-sm font-bold text-slate-900 leading-tight flex-1">{ins.title}</h3>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">{ins.body}</p>
+              </div>
+            ))}
+          </div>
+        </Section>
+
         <Section title="전체 요약" icon={<BarChart3 size={20} />}>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             <Stat label="총 응답자" value={`${total}명`} />
             <Stat label="평균 활용도" value={`${avgScore}점`} />
             <Stat label="응답 팀 수" value={`${teams.length}팀`} />
-            <Stat label="총 효율화 예상액" value={`${totalSavings.toLocaleString('ko-KR')}원`} accent />
+            <Stat label="권장 월 예산" value={`${totalBudget.monthlyKRW.toLocaleString('ko-KR')}원`} accent />
+          </div>
+
+          {/* 티어 분포 */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm mb-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-4">추천 티어 분포</h3>
+            <div className="flex h-10 rounded-lg overflow-hidden border border-slate-200 mb-3">
+              {tierCounts.max > 0 && (
+                <div className="bg-purple-500 grid place-items-center text-xs text-white font-semibold" style={{ flex: tierCounts.max }} title={`Max ${tierCounts.max}명`}>
+                  Max {tierCounts.max}
+                </div>
+              )}
+              {tierCounts.pro > 0 && (
+                <div className="bg-blue-500 grid place-items-center text-xs text-white font-semibold" style={{ flex: tierCounts.pro }} title={`Pro ${tierCounts.pro}명`}>
+                  Pro {tierCounts.pro}
+                </div>
+              )}
+              {tierCounts.free > 0 && (
+                <div className="bg-emerald-500 grid place-items-center text-xs text-white font-semibold" style={{ flex: tierCounts.free }} title={`무료 ${tierCounts.free}명`}>
+                  무료 {tierCounts.free}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1.5" />Max {tierCounts.max}명 · 월 {(tierCounts.max * 100 * KRW_RATE).toLocaleString('ko-KR')}원</div>
+              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1.5" />Pro {tierCounts.pro}명 · 월 {(tierCounts.pro * 20 * KRW_RATE).toLocaleString('ko-KR')}원</div>
+              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />무료 {tierCounts.free}명 · 0원</div>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
@@ -1344,16 +1700,17 @@ function AdminDashboard({ data, onRefresh, onReset }) {
           </div>
         </Section>
 
-        <Section title="팀별 AI 활용도 평가" icon={<Users size={20} />}>
+        <Section title="팀별 AI 활용도 + 권장 예산" icon={<Users size={20} />}>
           <div className="grid sm:grid-cols-2 gap-4">
             {teams.map((t) => {
               const members = byTeam[t];
               const avg = Math.round(members.reduce((s, m) => s + (Number(m.score) || 0), 0) / members.length);
               const grade = teamGrade(avg);
-              const savings = members.reduce((s, m) => s + (Number(m.savings) || 0), 0);
+              const budget = teamBudget(members);
               const aiCount = {};
               members.forEach((m) => { aiCount[m.ai] = (aiCount[m.ai] || 0) + 1; });
               const topAis = Object.entries(aiCount).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([ai]) => ai);
+              const mgmt = teamMgmtAdvice(avg, budget.tiers);
 
               return (
                 <div key={t} className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
@@ -1377,20 +1734,37 @@ function AdminDashboard({ data, onRefresh, onReset }) {
                     </div>
                   </div>
 
-                  <div className="text-xs text-slate-500 mb-2">주 추천 AI</div>
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {topAis.map((ai) => (
-                      <span key={ai} className="px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-700">{ai}</span>
-                    ))}
+                  {/* 팀별 티어 분포 */}
+                  <div className="mb-3">
+                    <div className="text-xs text-slate-500 mb-1.5">티어 분포</div>
+                    <div className="flex h-6 rounded overflow-hidden border border-slate-200 text-[10px] text-white font-semibold">
+                      {budget.tiers.max > 0 && <div className="bg-purple-500 grid place-items-center" style={{ flex: budget.tiers.max }}>{budget.tiers.max}</div>}
+                      {budget.tiers.pro > 0 && <div className="bg-blue-500 grid place-items-center" style={{ flex: budget.tiers.pro }}>{budget.tiers.pro}</div>}
+                      {budget.tiers.free > 0 && <div className="bg-emerald-500 grid place-items-center" style={{ flex: budget.tiers.free }}>{budget.tiers.free}</div>}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1">Max {budget.tiers.max} · Pro {budget.tiers.pro} · 무료 {budget.tiers.free}</div>
                   </div>
 
-                  <div className="text-xs text-slate-500 mb-1">팀 효율화 예상액</div>
-                  <div className="text-base font-bold text-emerald-700 mb-3 tabular-nums">
-                    {savings.toLocaleString('ko-KR')}원
+                  <div className="text-xs text-slate-500 mb-1">팀 권장 예산</div>
+                  <div className="flex items-baseline gap-2 mb-4">
+                    <div className="text-lg font-black text-slate-900 tabular-nums">월 {budget.monthlyKRW.toLocaleString('ko-KR')}원</div>
+                    <div className="text-xs text-slate-500">/ 연 {budget.yearlyKRW.toLocaleString('ko-KR')}원</div>
                   </div>
+
+                  {topAis.length > 0 && (
+                    <>
+                      <div className="text-xs text-slate-500 mb-2">주 추천 도구</div>
+                      <div className="flex flex-wrap gap-1.5 mb-4">
+                        {topAis.map((ai) => (
+                          <span key={ai} className="px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-700">{ai}</span>
+                        ))}
+                      </div>
+                    </>
+                  )}
 
                   <div className="text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
-                    💬 {grade.comment}
+                    <div className="font-semibold text-slate-700 mb-1">💬 관리 권고</div>
+                    {mgmt}
                   </div>
                 </div>
               );
@@ -1409,26 +1783,79 @@ function AdminDashboard({ data, onRefresh, onReset }) {
                     <th className="text-left px-4 py-3 font-semibold text-slate-700">직책</th>
                     <th className="text-right px-4 py-3 font-semibold text-slate-700">점수</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-700">등급</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">티어</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-700">추천 AI</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-700">주요 고민</th>
+                    <th className="text-center px-3 py-3 font-semibold text-slate-700 no-print">삭제</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map((d, i) => (
-                    <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                    <tr key={d._id || i} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium text-slate-900">{i < 3 && '👑 '}{d.name}</td>
                       <td className="px-4 py-3 text-slate-600">{d.team}</td>
                       <td className="px-4 py-3 text-slate-600">{d.role || '-'}</td>
                       <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 tabular-nums">{d.score}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{d.grade}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          d.tier === 'max' ? 'bg-purple-100 text-purple-700' :
+                          d.tier === 'pro' ? 'bg-blue-100 text-blue-700' :
+                          'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {d.tier === 'max' ? 'Max' : d.tier === 'pro' ? 'Pro' : '무료'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{d.ai}</td>
                       <td className="px-4 py-3 text-slate-500 text-xs max-w-[240px] truncate">
                         {(d.q6 || '').slice(0, 40)}{(d.q6 || '').length > 40 ? '…' : ''}
+                      </td>
+                      <td className="px-3 py-3 text-center no-print">
+                        <button
+                          onClick={() => {
+                            if (confirm(`${d.name}님의 응답을 삭제할까요?\n\n이 작업은 되돌릴 수 없습니다.`)) {
+                              onDelete(d._id || `${d.name}-${d.timestamp}`);
+                            }
+                          }}
+                          className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-md p-1.5 transition-all"
+                          title="이 응답 삭제"
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+          {source === 'webhook' && (
+            <p className="text-xs text-slate-400 mt-3 leading-relaxed">
+              ⚠️ 시트 연동 모드: 화면에서만 숨겨지며 구글 시트 원본은 유지됩니다. 시트에서 행을 직접 삭제해야 영구 삭제됩니다.
+            </p>
+          )}
+        </Section>
+
+        <Section title="추천 도구 채택 빈도" icon={<TrendingUp size={20} />}>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+            <div className="space-y-3">
+              {Object.entries(toolMap).sort((a, b) => b[1] - a[1]).map(([tool, count]) => {
+                const pct = total ? (count / total) * 100 : 0;
+                return (
+                  <div key={tool}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-slate-700">{tool}</span>
+                      <span className="text-slate-500 tabular-nums">{count}명 ({pct.toFixed(0)}%)</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">
+              💡 동일 도구를 추천받은 인원이 많을수록 일괄 도입 시 협상력이 높아집니다 (5명 이상 시 팀 플랜 검토 가능).
             </div>
           </div>
         </Section>
