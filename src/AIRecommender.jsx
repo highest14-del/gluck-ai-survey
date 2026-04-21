@@ -140,17 +140,21 @@ const QUESTIONS = {
   q2: {
     label: '다루는 데이터나 문서의 분량은요?',
     options: [
-      { value: 'short',  label: '짧은 문장이나 질문 위주',          desc: '단발성' },
-      { value: 'medium', label: 'A4 2~3장 분량',                   desc: '중간 길이' },
-      { value: 'long',   label: '책 한 권이나 대규모 코드베이스',     desc: '매우 김' },
+      { value: 'oneline', label: '한두 문장의 짧은 질문',           desc: '단발성 메시지' },
+      { value: 'short',   label: 'A4 한 장 이내',                  desc: '메모·짧은 답변' },
+      { value: 'medium',  label: 'A4 2~5장 분량',                 desc: '보고서·기획서' },
+      { value: 'large',   label: 'A4 10~30장 / 긴 코드 파일',      desc: '본격 문서·소스 단위' },
+      { value: 'massive', label: '책 한 권 / 대규모 코드베이스',     desc: '100장 이상 / 프로젝트 전체' },
     ],
   },
   q3: {
     label: '평소 AI 사용 빈도는요?',
     options: [
-      { value: 'rare',  label: '일주일에 몇 번',           desc: '가끔' },
-      { value: 'daily', label: '매일 1~2시간',             desc: '자주' },
-      { value: 'heavy', label: '업무의 대부분, 하루 종일',   desc: '헤비' },
+      { value: 'rarely',  label: '한 달에 몇 번',                desc: '가끔만 사용' },
+      { value: 'weekly',  label: '일주일에 2~3번',               desc: '필요할 때만' },
+      { value: 'daily',   label: '매일 30분~1시간',              desc: '습관적으로' },
+      { value: 'regular', label: '매일 2~4시간',                 desc: '주요 업무 도구' },
+      { value: 'heavy',   label: '하루 종일 (업무의 대부분)',     desc: '없으면 일이 안 됨' },
     ],
   },
   q4: {
@@ -164,6 +168,16 @@ const QUESTIONS = {
       { value: 'context', label: '더 긴 문서/대용량 자료를 한 번에 다루고 싶어요', desc: '컨텍스트 부족' },
       { value: 'none',    label: '특별히 부족한 점은 없어요',              desc: '지금 충분' },
       { value: 'never',   label: '아직 본격적으로 써본 적 없어요',           desc: '입문 단계' },
+    ],
+  },
+  // Q4 한도 부족 후속 질문 — Q4에 'limit' 체크 시 노출
+  q4Limit: {
+    label: '한도가 얼마나 부족하신가요?',
+    options: [
+      { value: 'mild',     label: '가끔 답답한 정도',                  desc: '월 2~3회 도달' },
+      { value: 'moderate', label: '주 단위로 빨리 떨어짐',              desc: '주 1~2회 도달' },
+      { value: 'severe',   label: '매일 한도 도달, 작업 흐름이 끊김',    desc: '거의 매일' },
+      { value: 'critical', label: '여러 계정 돌려쓰거나 결제 고민 중',   desc: '일상 차질' },
     ],
   },
   q5: {
@@ -274,10 +288,32 @@ function getRecommendation(answers) {
   const has = (a) => currentAis.includes(a);
 
   // ---------- 티어 결정 ----------
+  // 원칙:
+  //  1. heavy/regular(매일 2시간+) 사용자는 무조건 Pro 이상
+  //  2. Max 후보: 한도(severe/critical) 또는 (한도+긴 분량) 조합
+  //  3. light(주 2~3회 이하)는 Q4 따라 free/pro
+  const heavyUsage  = frequency === 'heavy'  || frequency === 'regular';   // 매일 2시간+
+  const dailyUsage  = frequency === 'daily';                                // 매일 30분~1시간
+  const isLongVol   = volume === 'large' || volume === 'massive';           // A4 10장 이상
+  const limitSev    = answers.q4Limit;                                      // mild/moderate/severe/critical
+  const severeLimit = limitSev === 'severe' || limitSev === 'critical';
+
   let tier;
-  if (hasPain('never') || (hasPain('none') && painArr.length === 1)) tier = 'free';
-  else if ((hasPain('limit') || hasPain('context')) && frequency === 'heavy' && volume === 'long') tier = 'max';
-  else tier = 'pro';
+  const isMaxCandidate =
+    heavyUsage && (
+      (hasPain('limit') && severeLimit) ||                             // 심각한 한도 부족 단독으로도 Max
+      ((hasPain('limit') || hasPain('context')) && isLongVol)          // 한도/컨텍스트 + 긴 분량
+    );
+
+  if (heavyUsage) {
+    tier = isMaxCandidate ? 'max' : 'pro';
+  } else if (dailyUsage) {
+    tier = 'pro';
+  } else {
+    // weekly / rarely
+    if (hasPain('never') || (hasPain('none') && painArr.length === 1)) tier = 'free';
+    else tier = 'pro';
+  }
 
   // 다중 pain 시 부드럽게 묶어서 표현
   const painLabels = {
@@ -386,7 +422,7 @@ function getRecommendation(answers) {
 
   // ---------- Pro ----------
   if (primary === 'coding') {
-    if (volume === 'long' && (frequency === 'heavy' || frequency === 'daily')) {
+    if (isLongVol && (heavyUsage || dailyUsage)) {
       return rec(
         'Cursor Pro', '⌨️', 'pro', 180000,
         `${painLabel}을 고려하면 IDE 통합 코딩 도구 Cursor Pro가 정답입니다. 백엔드로 Claude·GPT-5를 모두 사용할 수 있어 모델 선택의 유연성도 확보됩니다. ${TAIL}`,
@@ -401,7 +437,7 @@ function getRecommendation(answers) {
   }
 
   if (primary === 'writing') {
-    if (volume === 'long') {
+    if (isLongVol) {
       return rec(
         'Gemini Advanced', '📜', 'pro', 180000,
         `긴 문서를 자주 다루시는 패턴에는 Gemini Advanced의 2M 토큰 컨텍스트가 결정적입니다. 책 한 권 통째로 던지고 요약·분석이 가능합니다. ${TAIL}`,
@@ -473,13 +509,13 @@ function getRecommendation(answers) {
 // ============================================================
 function getMaturity(answers) {
   let score = 0;
-  if (answers.q3 === 'rare') score += 10;
-  if (answers.q3 === 'daily') score += 30;
-  if (answers.q3 === 'heavy') score += 50;
+  // Q3 빈도 (5단계)
+  const q3Map = { rarely: 5, weekly: 15, daily: 25, regular: 40, heavy: 55 };
+  score += q3Map[answers.q3] || 0;
 
-  if (answers.q2 === 'short') score += 5;
-  if (answers.q2 === 'medium') score += 15;
-  if (answers.q2 === 'long') score += 25;
+  // Q2 분량 (5단계)
+  const q2Map = { oneline: 2, short: 5, medium: 15, large: 22, massive: 28 };
+  score += q2Map[answers.q2] || 0;
 
   // Q1 (array) — 용도 중 가장 높은 점수만 반영
   const q1ScoreMap = { coding: 15, research: 15, writing: 10, image: 8, general: 5 };
@@ -694,7 +730,7 @@ function SurveyMode() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({
     name: '', team: '', role: '',
-    q1: [], q2: '', q3: '', q4: [], q5: [], q5Other: '', q6: '',
+    q1: [], q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q6: '',
   });
   const [result, setResult] = useState(null);
 
@@ -704,7 +740,7 @@ function SurveyMode() {
   const prev = () => setStep((s) => Math.max(0, s - 1));
   const restart = () => {
     setStep(0);
-    setAnswers({ name: '', team: '', role: '', q1: [], q2: '', q3: '', q4: [], q5: [], q5Other: '', q6: '' });
+    setAnswers({ name: '', team: '', role: '', q1: [], q2: '', q3: '', q4: [], q4Limit: '', q5: [], q5Other: '', q6: '' });
     setResult(null);
   };
 
@@ -727,6 +763,7 @@ function SurveyMode() {
       q1: toArr(answers.q1).join(', '),
       q2: answers.q2, q3: answers.q3,
       q4: toArr(answers.q4).join(', '),
+      q4Limit: answers.q4Limit || '',
       q5: toArr(answers.q5).map((v) => v === 'other' && answers.q5Other ? `기타(${answers.q5Other})` : v).join(', '),
       q6: answers.q6,
       recommendedAi: rec.ai,
@@ -800,6 +837,10 @@ function SurveyMode() {
             <MultiQuestionStep
               num="Q4" question={QUESTIONS.q4}
               values={answers.q4} onChange={(v) => setField('q4', v)}
+              followValue="limit"
+              followQuestion={QUESTIONS.q4Limit}
+              followSelected={answers.q4Limit}
+              onFollowChange={(v) => setField('q4Limit', v)}
               onNext={next} onPrev={prev}
             />
           )}
@@ -903,7 +944,7 @@ function WelcomeStep({ name, team, role, onConfirm, onManualSubmit, onChangeName
             {matched.team} · {matched.role}
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 leading-snug mb-3">
-            {matched.name}님, 반갑습니다!
+            {matched.name} {matched.role}님, 반갑습니다!
           </div>
           <p className="text-sm text-slate-600 leading-relaxed">
             글룩 AI 진단에 함께해주셔서 감사합니다.<br />
@@ -1012,10 +1053,15 @@ function SingleQuestionStep({ num, qKey, question, value, onSelect, onPrev }) {
 }
 
 // ---------- 다중 선택 (Q1, Q4, Q5) ----------
-function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev, otherValue, otherText, onOtherChange, otherPlaceholder }) {
+function MultiQuestionStep({
+  num, question, values, onChange, onNext, onPrev,
+  otherValue, otherText, onOtherChange, otherPlaceholder,
+  followValue, followQuestion, followSelected, onFollowChange,
+}) {
   const current = Array.isArray(values) ? values : [];
   const exclusive = question.exclusive || [];
   const showOther = otherValue && current.includes(otherValue);
+  const showFollow = followValue && followQuestion && current.includes(followValue);
 
   const toggle = (v) => {
     let next;
@@ -1031,7 +1077,9 @@ function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev, ot
     onChange(next);
   };
 
-  const ok = current.length > 0 && (!showOther || (otherText || '').trim().length > 0);
+  const ok = current.length > 0
+    && (!showOther || (otherText || '').trim().length > 0)
+    && (!showFollow || !!followSelected);
 
   return (
     <div>
@@ -1073,6 +1121,31 @@ function MultiQuestionStep({ num, question, values, onChange, onNext, onPrev, ot
             placeholder={otherPlaceholder || '예: Notion AI, Suno, ElevenLabs 등'}
             className="w-full px-5 py-3 text-base bg-white border border-slate-200 rounded-xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all"
           />
+        </div>
+      )}
+
+      {showFollow && (
+        <div className="mt-4 p-5 rounded-2xl bg-amber-50 border border-amber-200 anim-fade-in">
+          <div className="text-sm font-bold text-amber-900 mb-1 flex items-center gap-1.5">
+            <AlertCircle size={16} /> {followQuestion.label} <span className="text-rose-500">*</span>
+          </div>
+          <div className="text-xs text-amber-800/80 mb-3">한도 부족 정도를 알려주시면 예산 배분에 반영됩니다.</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {followQuestion.options.map((opt) => {
+              const sel = followSelected === opt.value;
+              return (
+                <button key={opt.value} onClick={() => onFollowChange(opt.value)}
+                  className={`text-left px-3 py-2.5 rounded-lg border text-xs transition-all ${
+                    sel
+                      ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
+                      : 'bg-white text-slate-700 border-amber-200 hover:border-amber-400 hover:-translate-y-0.5'
+                  }`}>
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className={`text-[10px] mt-0.5 ${sel ? 'text-white/80' : 'text-slate-500'}`}>{opt.desc}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
