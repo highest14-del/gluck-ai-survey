@@ -6,5 +6,38 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR",
     Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 진단 모드 단계 전환 */
+.anim-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 관리자 비밀번호 오류 */
+.anim-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-8px); }
+  75%      { transform: translateX(8px); }
+}
+
+/* 인쇄용 */
+@media print {
+  body { background: white !important; }
+  .no-print { display: none !important; }
+  .print-card {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    page-break-inside: avoid;
+  }
 }

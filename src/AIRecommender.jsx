@@ -1,952 +1,1093 @@
 import React, { useState, useEffect } from 'react';
+import {
+  ArrowRight,
+  ArrowLeft,
+  Sparkles,
+  CheckCircle2,
+  Upload,
+  Lock,
+  FileText,
+  BarChart3,
+  Users,
+  TrendingUp,
+  Printer,
+  RefreshCw,
+  Heart,
+} from 'lucide-react';
 
-/**
- * GLUCK 임직원을 위한 AI 구독 진단기
- * 2026년 4월 기준 최신 AI 라인업 반영
- */
-const AIRecommender = () => {
-  // step: 'intro' | 1~5 | 'loading' | 'result'
-  const [step, setStep] = useState('intro');
+// ============================================================
+// 상수 — 배포 전 WEBHOOK_URL 만 교체하면 됩니다.
+// ============================================================
+const WEBHOOK_URL = 'YOUR_APPS_SCRIPT_URL';
+const ADMIN_PASSWORD = 'gluck2026';
+
+const TEAMS = ['기획팀', '운영팀', '출력팀', '후가공팀', '팩토리팀', '경영지원부'];
+
+const QUESTIONS = {
+  q1: {
+    label: 'AI를 주로 어떤 용도로 사용하시나요?',
+    options: [
+      { value: 'coding',   label: '코딩 및 개발',                       desc: '웹, 앱, 데이터 분석' },
+      { value: 'writing',  label: '긴 문서 작성 및 전문 글쓰기',          desc: '보고서, 기획서' },
+      { value: 'general',  label: '일상 질문, 번역, 아이디어 브레인스토밍', desc: '가벼운 활용' },
+      { value: 'image',    label: '이미지/영상 생성 및 디자인',           desc: '비주얼 콘텐츠 제작' },
+      { value: 'research', label: '학술 연구, 논문 검토',                desc: '심층 자료 분석' },
+    ],
+  },
+  q2: {
+    label: '다루는 데이터나 문서의 분량은요?',
+    options: [
+      { value: 'short',  label: '짧은 문장이나 질문 위주',          desc: '단발성' },
+      { value: 'medium', label: 'A4 2~3장 분량',                   desc: '중간 길이' },
+      { value: 'long',   label: '책 한 권이나 대규모 코드베이스',     desc: '매우 김' },
+    ],
+  },
+  q3: {
+    label: '평소 AI 사용 빈도는요?',
+    options: [
+      { value: 'rare',  label: '일주일에 몇 번',           desc: '가끔' },
+      { value: 'daily', label: '매일 1~2시간',             desc: '자주' },
+      { value: 'heavy', label: '업무의 대부분, 하루 종일',   desc: '헤비' },
+    ],
+  },
+  q4: {
+    label: 'AI 구독에 대한 생각은요?',
+    options: [
+      { value: 'free', label: '무료만 쓸래요',              desc: '구독 없이' },
+      { value: 'low',  label: '월 2~3만원까지는 OK',        desc: '합리적 투자' },
+      { value: 'mid',  label: '월 10만원 이상도 투자 가능', desc: '적극적 투자' },
+      { value: 'high', label: '최고 성능이면 돈 안 아낌',   desc: '성과 우선' },
+    ],
+  },
+};
+
+// ============================================================
+// 추천 로직
+// ============================================================
+function getRecommendation(answers) {
+  const { q1: useCase, q2: volume, q3: frequency, q4: budget } = answers;
+
+  if (budget === 'free') {
+    let ai, icon;
+    if (useCase === 'research' || useCase === 'general') { ai = 'Perplexity 무료 + Claude 무료'; icon = '🔍'; }
+    else if (useCase === 'coding' || useCase === 'writing') { ai = 'Claude 무료'; icon = '🎨'; }
+    else if (useCase === 'image') { ai = 'ChatGPT 무료'; icon = '🖼️'; }
+    else { ai = 'Gemini 무료'; icon = '💎'; }
+    return {
+      ai, icon, tier: 'free', savings: 240000,
+      advice:
+        '지금 사용 패턴이라면 무료 버전으로도 충분히 필요한 작업을 해내실 수 있습니다. 합리적인 선택이에요. 남겨주신 답변 덕분에 글룩이 불필요한 구독 지출 없이 AI 예산을 효율적으로 수립할 수 있게 되었습니다. 감사합니다.',
+    };
+  }
+
+  if (budget === 'high' || (budget === 'mid' && frequency === 'heavy')) {
+    if (useCase === 'coding' && volume === 'long') {
+      return {
+        ai: 'Claude Max', icon: '💎', tier: 'max', savings: 0,
+        advice:
+          '대규모 코드베이스를 집중적으로 다루시는 패턴에는 Claude Max가 본전을 뽑을 수 있는 구독입니다. Rate limit 걱정 없이 작업 가능합니다. 응답해주신 덕분에 글룩이 헤비유저 대상의 AI 투자 전략을 명확히 세울 수 있게 되었습니다.',
+      };
+    }
+    if (useCase === 'writing' && volume === 'long') {
+      return {
+        ai: 'Claude Max', icon: '📚', tier: 'max', savings: 0,
+        advice:
+          '방대한 문서를 매일 다루는 업무에는 Max 구독이 확실한 투자입니다. 남겨주신 답변이 글룩의 핵심 작업자 대상 AI 지원 예산 수립에 큰 도움이 되었습니다.',
+      };
+    }
+    return {
+      ai: 'Claude Pro + ChatGPT Plus 병행', icon: '⚡', tier: 'pro', savings: 0,
+      advice:
+        '다양한 업무에 AI를 적극 활용하시는 패턴에는 Claude Pro와 ChatGPT Plus를 조합하는 것이 실용적입니다. 응답해주신 덕분에 글룩이 멀티 도구 전략에 맞는 예산을 수립할 수 있게 되었습니다.',
+    };
+  }
+
+  if (useCase === 'coding') {
+    return {
+      ai: 'Claude Pro', icon: '⚡', tier: 'pro', savings: 180000,
+      advice:
+        '현재 업무 패턴에는 Claude Pro 하나로 충분히 고효율을 낼 수 있습니다. 2026년 기준 코딩 문맥 파악과 긴 코드베이스 이해력이 가장 뛰어난 도구입니다. 소중한 답변 덕분에 글룩이 개발 생산성에 맞춰 AI 도구를 정확히 배치할 수 있게 되었습니다.',
+    };
+  }
+  if (useCase === 'writing' || useCase === 'research') {
+    return {
+      ai: 'Claude Pro', icon: '📝', tier: 'pro', savings: 180000,
+      advice:
+        '긴 문서 작업에는 Claude Pro가 가장 안정적인 선택입니다. 200K 토큰 컨텍스트로 방대한 자료도 한 번에 처리할 수 있어요. 남겨주신 답변 덕분에 글룩이 문서 업무 효율화에 맞는 AI 예산을 수립할 수 있게 되었습니다.',
+    };
+  }
+  if (useCase === 'image') {
+    return {
+      ai: 'ChatGPT Plus', icon: '🎨', tier: 'pro', savings: 180000,
+      advice:
+        '이미지 생성 중심의 작업에는 ChatGPT Plus의 DALL-E로 충분한 퀄리티를 낼 수 있습니다. 응답해주신 덕분에 글룩의 비주얼 업무 영역에 맞는 AI 예산을 정할 수 있게 되었습니다.',
+    };
+  }
+  return {
+    ai: 'ChatGPT Plus', icon: '💬', tier: 'pro', savings: 180000,
+    advice:
+      '범용 사용에는 ChatGPT Plus나 Gemini Advanced 중 하나로 충분합니다. 남겨주신 답변이 글룩의 실용적인 AI 예산 기준을 세우는 데 큰 도움이 되었습니다.',
+  };
+}
+
+// ============================================================
+// AI 활용 성숙도 점수
+// ============================================================
+function getMaturity(answers) {
+  let score = 0;
+  if (answers.q3 === 'rare') score += 10;
+  if (answers.q3 === 'daily') score += 30;
+  if (answers.q3 === 'heavy') score += 50;
+
+  if (answers.q2 === 'short') score += 5;
+  if (answers.q2 === 'medium') score += 15;
+  if (answers.q2 === 'long') score += 25;
+
+  if (answers.q1 === 'coding' || answers.q1 === 'research') score += 15;
+  else if (answers.q1 === 'writing') score += 10;
+  else if (answers.q1 === 'image') score += 8;
+  else if (answers.q1 === 'general') score += 5;
+
+  const len = (answers.q5 || '').length;
+  if (len >= 100) score += 10;
+  else if (len >= 50) score += 5;
+
+  score = Math.min(100, score);
+
+  if (score >= 80) return { score, label: 'AI 파워유저',     emoji: '💎', color: 'purple' };
+  if (score >= 60) return { score, label: '적극 활용자',      emoji: '🚀', color: 'blue' };
+  if (score >= 40) return { score, label: '꾸준한 사용자',    emoji: '✨', color: 'green' };
+  if (score >= 20) return { score, label: '탐색 중인 사용자', emoji: '🌱', color: 'amber' };
+  return                  { score, label: '이제 시작하는 분', emoji: '🌰', color: 'gray' };
+}
+
+function getReasons(answers, tier) {
+  const base = {
+    coding: [
+      '코딩 용도에서 Claude는 2026년 현재 가장 높은 SWE-bench 점수를 기록 중입니다',
+      'IDE 통합(Claude Code)과 긴 컨텍스트로 전체 프로젝트 이해가 가능합니다',
+    ],
+    writing: [
+      '한국어 문장력과 톤 조절에서 Claude가 자연스럽습니다',
+      '긴 문서 요약과 일관성 유지에 강점이 있습니다',
+    ],
+    research: [
+      'Perplexity는 실시간 웹 검색 + 출처 표기로 팩트 체크에 유리합니다',
+      'Claude는 논문 해석과 비판적 분석에 강점이 있습니다',
+    ],
+    image: [
+      'ChatGPT Plus의 DALL-E로 안정적인 이미지 품질을 확보할 수 있습니다',
+      '텍스트 작업도 함께 가능해 효율적입니다',
+    ],
+    general: [
+      '무료 버전만으로도 일상 사용에는 부족함이 없습니다',
+      '여러 AI를 병행 사용하는 것이 특정 유료보다 효과적일 수 있습니다',
+    ],
+  };
+  const reasons = [...(base[answers.q1] || base.general)];
+
+  if (answers.q2 === 'long')
+    reasons.push('긴 문서/코드 처리엔 Claude의 200K 컨텍스트가 결정적입니다');
+  else if (tier === 'free')
+    reasons.push('현재 사용 패턴에 맞는 가장 합리적인 선택입니다');
+  else
+    reasons.push('사용 빈도 대비 가성비가 가장 좋은 조합입니다');
+
+  return reasons;
+}
+
+function getTips(useCase) {
+  const tips = {
+    coding: [
+      "파일 전체를 복사해서 붙여넣고 '리팩토링 관점에서 리뷰해줘'라고 요청하세요",
+      "에러 로그 전체를 주고 '왜 발생했고 어떻게 고칠지 단계별로 설명해줘'라고 하세요",
+      'Claude Code CLI를 쓰면 터미널에서 바로 프로젝트 전체 작업이 가능합니다',
+    ],
+    writing: [
+      "초안을 먼저 쓰고 '더 간결하게 / 더 전문적 톤으로' 등 방향 지시로 다듬으세요",
+      '긴 보고서는 개요부터 잡고 섹션별로 나눠 작성하면 일관성이 유지됩니다',
+      "'다음 글을 ~를 위한 1페이지 요약으로' 같은 대상+형식 지시가 효과적입니다",
+    ],
+    research: [
+      'Perplexity로 최신 정보 검색 → Claude로 심층 분석 조합이 베스트입니다',
+      "'이 주장에 반대되는 증거도 찾아서 양쪽 관점을 정리해줘'로 편향을 줄이세요",
+      "논문은 PDF 업로드 후 '핵심 주장, 방법론, 한계점 3가지로 정리'를 요청하세요",
+    ],
+    image: [
+      "프롬프트에 '스타일: ~, 조명: ~, 구도: ~'처럼 구체적 속성을 명시하세요",
+      "레퍼런스 이미지를 업로드하고 '이런 느낌으로'라고 지시하면 정확도가 올라갑니다",
+      "첫 결과가 마음에 안 들면 전체 다시 말고 '조명만 따뜻하게' 식 부분 수정으로 좁히세요",
+    ],
+    general: [
+      '질문을 짧게 나눠서 던지면 답변 품질이 올라갑니다',
+      "'~를 모르는 사람에게 설명해줘' 같은 페르소나 지정이 효과적입니다",
+      "답변이 애매하면 '구체적 예시 3개와 함께'라고 덧붙이세요",
+    ],
+  };
+  return tips[useCase] || tips.general;
+}
+
+// 웹훅 — no-cors. 실패해도 사용자 화면 정상 진행
+async function sendWebhook(payload) {
+  if (!WEBHOOK_URL || WEBHOOK_URL === 'YOUR_APPS_SCRIPT_URL') return;
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {}
+}
+
+// CSV 파싱
+function parseCSV(text) {
+  const rows = [];
+  let i = 0, field = '', row = [], inQuotes = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i += 2; continue; }
+      if (ch === '"') { inQuotes = false; i++; continue; }
+      field += ch; i++;
+    } else {
+      if (ch === '"') { inQuotes = true; i++; }
+      else if (ch === ',') { row.push(field); field = ''; i++; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = ''; rows.push(row); row = []; i++;
+      } else { field += ch; i++; }
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.length > 0));
+}
+
+// ============================================================
+// 최상위 — URL 해시로 모드 분기
+// ============================================================
+export default function AIRecommender() {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsAdmin(window.location.hash === '#admin');
+    check();
+    window.addEventListener('hashchange', check);
+    return () => window.removeEventListener('hashchange', check);
+  }, []);
+
+  return isAdmin ? <AdminMode /> : <SurveyMode />;
+}
+
+// ============================================================
+// 진단 모드
+// ============================================================
+function SurveyMode() {
+  const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({
-    q1: null,
-    q2: null,
-    q3: null,
-    q4: null,
-    q5: '',
+    name: '', team: '', role: '',
+    q1: '', q2: '', q3: '', q4: '', q5: '',
   });
   const [result, setResult] = useState(null);
-  const [animKey, setAnimKey] = useState(0);
 
-  // ---------- AI 데이터베이스 (2026년 4월 기준) ----------
-  const AI_DB = {
-    'chatgpt-free': {
-      name: 'ChatGPT 무료',
-      emoji: '💬',
-      brand: 'from-emerald-500 to-teal-600',
-      ring: 'ring-emerald-400',
-      tier: 'free',
-      price: 0,
-      strength: '범용성과 친숙한 UX',
-    },
-    'claude-free': {
-      name: 'Claude 무료',
-      emoji: '🤖',
-      brand: 'from-orange-500 to-amber-600',
-      ring: 'ring-orange-400',
-      tier: 'free',
-      price: 0,
-      strength: '자연스러운 글쓰기와 추론',
-    },
-    'gemini-free': {
-      name: 'Gemini 무료',
-      emoji: '✨',
-      brand: 'from-blue-500 to-sky-600',
-      ring: 'ring-blue-400',
-      tier: 'free',
-      price: 0,
-      strength: '구글 검색 통합과 멀티모달',
-    },
-    'perplexity-free': {
-      name: 'Perplexity 무료',
-      emoji: '🔎',
-      brand: 'from-cyan-500 to-teal-500',
-      ring: 'ring-cyan-400',
-      tier: 'free',
-      price: 0,
-      strength: '출처 기반 실시간 검색',
-    },
-    'chatgpt-plus': {
-      name: 'ChatGPT Plus',
-      emoji: '💎',
-      brand: 'from-emerald-500 to-green-700',
-      ring: 'ring-emerald-400',
-      tier: 'plus',
-      price: 20,
-      strength: 'GPT-5 + DALL·E 이미지 + GPTs 생태계',
-    },
-    'claude-pro': {
-      name: 'Claude Pro',
-      emoji: '🧠',
-      brand: 'from-orange-500 to-rose-600',
-      ring: 'ring-orange-400',
-      tier: 'plus',
-      price: 20,
-      strength: '긴 문서·코드 이해력, Projects, Artifacts',
-    },
-    'claude-max': {
-      name: 'Claude Max',
-      emoji: '👑',
-      brand: 'from-amber-500 via-orange-500 to-rose-600',
-      ring: 'ring-amber-400',
-      tier: 'max',
-      price: 100,
-      strength: '한도 5~20배 + Claude Code 풀 활용',
-    },
-    'gemini-advanced': {
-      name: 'Gemini Advanced',
-      emoji: '🚀',
-      brand: 'from-blue-500 to-indigo-700',
-      ring: 'ring-blue-400',
-      tier: 'plus',
-      price: 20,
-      strength: '2M 토큰 컨텍스트 + 워크스페이스 연동',
-    },
-    'perplexity-pro': {
-      name: 'Perplexity Pro',
-      emoji: '🔭',
-      brand: 'from-cyan-500 to-sky-700',
-      ring: 'ring-cyan-400',
-      tier: 'plus',
-      price: 20,
-      strength: '심층 리서치(Deep Research) + 최신 모델 선택',
-    },
-    'cursor-pro': {
-      name: 'Cursor Pro',
-      emoji: '⌨️',
-      brand: 'from-zinc-600 to-slate-800',
-      ring: 'ring-zinc-400',
-      tier: 'plus',
-      price: 20,
-      strength: 'IDE 통합 코딩, Agent 모드',
-    },
-    'midjourney': {
-      name: 'Midjourney',
-      emoji: '🎨',
-      brand: 'from-fuchsia-500 to-purple-700',
-      ring: 'ring-fuchsia-400',
-      tier: 'plus',
-      price: 30,
-      strength: '예술적 이미지 퀄리티 최상',
-    },
-  };
-
-  // ---------- 질문 정의 ----------
-  const questions = [
-    {
-      id: 'q1',
-      title: 'AI를 주로 어떤 용도로 쓰세요?',
-      sub: '가장 많은 시간을 쓰는 영역 하나만요.',
-      options: [
-        { v: 'coding', label: '코딩 및 개발', desc: '웹·앱·데이터 분석' },
-        { v: 'writing', label: '긴 문서 작성·전문 글쓰기', desc: '보고서, 기획서' },
-        { v: 'casual', label: '일상 질문·번역·브레인스토밍', desc: '가볍게 활용' },
-        { v: 'image', label: '이미지·영상 생성·디자인', desc: '비주얼 작업' },
-        { v: 'research', label: '학술 연구·논문 검토', desc: '깊이 있는 분석' },
-      ],
-    },
-    {
-      id: 'q2',
-      title: '다루는 데이터·문서의 분량은요?',
-      sub: '한 번에 AI에 던지는 양 기준이에요.',
-      options: [
-        { v: 'short', label: '짧은 문장·질문 위주', desc: '단발성' },
-        { v: 'medium', label: 'A4 2~3장 분량', desc: '중간 길이' },
-        { v: 'long', label: '책 한 권·대규모 코드베이스', desc: '매우 김' },
-      ],
-    },
-    {
-      id: 'q3',
-      title: 'AI 사용 빈도는요?',
-      sub: '솔직하게요. 본전 계산이 달라져요.',
-      options: [
-        { v: 'rare', label: '일주일에 몇 번', desc: '가끔' },
-        { v: 'daily', label: '매일 1~2시간', desc: '자주' },
-        { v: 'heavy', label: '업무의 대부분', desc: '하루 종일' },
-      ],
-    },
-    {
-      id: 'q4',
-      title: 'AI 구독에 대한 생각은요?',
-      sub: '예산이 합리적인 추천을 좌우합니다.',
-      options: [
-        { v: 'free', label: '무료만 쓸래요', desc: '0원' },
-        { v: 'cheap', label: '월 2~3만원까지는 OK', desc: '~₩30,000' },
-        { v: 'mid', label: '월 10만원 이상도 투자 가능', desc: '~₩150,000' },
-        { v: 'unlimited', label: '최고 성능이면 돈 안 아낌', desc: '제한 없음' },
-      ],
-    },
-  ];
-
-  // ---------- 점수 계산 로직 ----------
-  const calc = () => {
-    const s = Object.fromEntries(Object.keys(AI_DB).map((k) => [k, 0]));
-    const { q1, q2, q3, q4, q5 } = answers;
-
-    // Q1: 용도
-    if (q1 === 'coding') {
-      s['claude-pro'] += 5;
-      s['claude-max'] += 4;
-      s['cursor-pro'] += 5;
-      s['chatgpt-plus'] += 2;
-      s['claude-free'] += 2;
-    }
-    if (q1 === 'writing') {
-      s['claude-pro'] += 5;
-      s['claude-max'] += 3;
-      s['chatgpt-plus'] += 3;
-      s['gemini-advanced'] += 2;
-      s['claude-free'] += 2;
-    }
-    if (q1 === 'casual') {
-      s['chatgpt-free'] += 5;
-      s['gemini-free'] += 5;
-      s['claude-free'] += 4;
-      s['perplexity-free'] += 3;
-    }
-    if (q1 === 'image') {
-      s['midjourney'] += 6;
-      s['chatgpt-plus'] += 4;
-      s['gemini-advanced'] += 2;
-    }
-    if (q1 === 'research') {
-      s['perplexity-pro'] += 5;
-      s['claude-pro'] += 4;
-      s['claude-max'] += 3;
-      s['gemini-advanced'] += 3;
-      s['perplexity-free'] += 2;
-    }
-
-    // Q2: 분량
-    if (q2 === 'short') {
-      s['chatgpt-free'] += 3;
-      s['gemini-free'] += 3;
-      s['claude-free'] += 3;
-      s['perplexity-free'] += 2;
-    }
-    if (q2 === 'medium') {
-      s['chatgpt-plus'] += 3;
-      s['claude-pro'] += 3;
-      s['gemini-advanced'] += 2;
-    }
-    if (q2 === 'long') {
-      s['claude-pro'] += 5;
-      s['claude-max'] += 5;
-      s['gemini-advanced'] += 4;
-    }
-
-    // Q3: 빈도
-    if (q3 === 'rare') {
-      Object.keys(s).forEach((k) => {
-        if (AI_DB[k].tier === 'free') s[k] += 3;
-      });
-    }
-    if (q3 === 'daily') {
-      Object.keys(s).forEach((k) => {
-        if (AI_DB[k].tier === 'plus') s[k] += 3;
-      });
-    }
-    if (q3 === 'heavy') {
-      s['claude-max'] += 5;
-      Object.keys(s).forEach((k) => {
-        if (AI_DB[k].tier === 'plus') s[k] += 2;
-      });
-    }
-
-    // Q4: 예산 (필터 + 가산점)
-    if (q4 === 'free') {
-      Object.keys(s).forEach((k) => {
-        if (AI_DB[k].tier !== 'free') s[k] -= 100;
-        else s[k] += 4;
-      });
-    }
-    if (q4 === 'cheap') {
-      Object.keys(s).forEach((k) => {
-        if (AI_DB[k].price > 30) s[k] -= 100;
-        if (AI_DB[k].tier === 'plus') s[k] += 2;
-      });
-    }
-    if (q4 === 'mid') {
-      Object.keys(s).forEach((k) => {
-        if (AI_DB[k].tier === 'plus') s[k] += 1;
-      });
-    }
-    if (q4 === 'unlimited') {
-      s['claude-max'] += 4;
-    }
-
-    // Q5: 키워드 부스트
-    const text = (q5 || '').toLowerCase();
-    const kw = (arr) => arr.some((w) => text.includes(w));
-    if (kw(['코드', '코딩', '개발', '리뷰', 'python', '파이썬', '버그', '리팩'])) {
-      s['claude-pro'] += 3;
-      s['cursor-pro'] += 3;
-      s['claude-max'] += 2;
-    }
-    if (kw(['논문', '연구', '리서치', '검색', '출처', '레퍼런스'])) {
-      s['perplexity-pro'] += 3;
-      s['claude-pro'] += 2;
-    }
-    if (kw(['이미지', '디자인', '그림', '로고', '포스터', '영상'])) {
-      s['midjourney'] += 3;
-      s['chatgpt-plus'] += 2;
-    }
-    if (kw(['요약', '회의록', '보고서', '문서', '기획'])) {
-      s['claude-pro'] += 3;
-      s['gemini-advanced'] += 2;
-    }
-    if (kw(['번역', '메일', '카톡', '일상'])) {
-      s['chatgpt-free'] += 2;
-      s['gemini-free'] += 2;
-    }
-
-    // 정렬
-    const ranked = Object.entries(s)
-      .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => ({ key: k, score: v, ...AI_DB[k] }));
-
-    return ranked;
-  };
-
-  // ---------- 결과 메시지 빌더 ----------
-  const buildResult = () => {
-    const ranked = calc();
-    const top = ranked[0];
-    const second = ranked.find((r) => r.key !== top.key && r.score > 0);
-
-    // 톤 결정
-    let headline = '';
-    let tone = 'free';
-    if (top.tier === 'free') {
-      tone = 'free';
-      headline = `솔직히 말씀드릴게요. 고객님은 유료 결제하실 필요 전혀 없습니다. ${top.name} 하나면 차고 넘쳐요. 월 구독료 아끼시고 그 돈으로 점심 한 끼 더 드세요.`;
-    } else if (top.tier === 'plus') {
-      tone = 'plus';
-      headline = `이것저것 다 결제하지 마시고, 딱 ${top.name} 하나만 뽑으세요. ${top.strength}에서 압도적입니다. 두 개 이상 결제는 99% 낭비입니다.`;
-    } else {
-      tone = 'max';
-      headline = `사용 패턴 보니까 ${top.name} 본전 충분히 뽑으십니다. 다만 한 달 써보고 한도 절반도 못 쓰면 미련 없이 Pro로 내리세요. 자존심 지키려고 비싼 거 쓰는 건 오히려 손해예요.`;
-    }
-
-    // 추천 이유 3가지 (동적)
-    const reasons = [];
-    const { q1, q2, q3, q4 } = answers;
-    const usageMap = {
-      coding: '코딩·개발',
-      writing: '긴 문서 작성',
-      casual: '일상 질문',
-      image: '이미지 생성',
-      research: '학술 연구',
-    };
-    const lengthMap = {
-      short: '짧은 단발성 질문',
-      medium: 'A4 2~3장 분량',
-      long: '대용량 문서·코드베이스',
-    };
-    const freqMap = {
-      rare: '주 몇 회',
-      daily: '매일 1~2시간',
-      heavy: '하루 종일',
-    };
-
-    reasons.push(
-      `${usageMap[q1]} 용도에서 ${top.name}의 핵심 강점인 "${top.strength}"이 정확히 들어맞습니다.`
-    );
-    reasons.push(
-      `${lengthMap[q2]} 작업량과 ${freqMap[q3]} 사용 패턴 기준, ${
-        top.tier === 'free'
-          ? '굳이 유료로 갈 이유가 없습니다.'
-          : top.tier === 'max'
-          ? '무제한급 한도가 실질적으로 필요합니다.'
-          : '월 $20 라인이 가성비 정점입니다.'
-      }`
-    );
-    reasons.push(
-      q4 === 'free'
-        ? '"무료만 쓰겠다"는 답변, 존중합니다. 그 기준에서 가장 강한 무료 모델을 골랐어요.'
-        : q4 === 'unlimited'
-        ? '"최고 성능이면 돈 안 아낀다" 하셨지만, 그렇다고 무지성 결제는 안 됩니다. 진짜 필요한 1~2개만 가세요.'
-        : '예산 안에서 만족도 1순위 옵션입니다.'
-    );
-
-    // 절약 효과 계산
-    // 가정: 사용자가 "다 결제했을 때" = ChatGPT Plus + Claude Max + Midjourney
-    const overpay = 20 + 100 + 30; // $150/월
-    const recommendedCost = top.price;
-    const monthlySaving = Math.max(0, overpay - recommendedCost);
-    const yearlySavingKRW = monthlySaving * 12 * 1380; // 환율 가정
-
-    // 주관식 맞춤 팁
-    const userText = (answers.q5 || '').trim();
-    const tips = generateTips(top.key, userText);
-    const samplePrompt = generateSamplePrompt(top.key, userText);
-
-    return {
-      ranked,
-      top,
-      second,
-      headline,
-      tone,
-      reasons,
-      monthlySaving,
-      yearlySavingKRW,
-      userText,
-      tips,
-      samplePrompt,
-    };
-  };
-
-  const generateTips = (key, userText) => {
-    const generic = [
-      '한 번에 모든 걸 묻지 말고, 큰 작업은 단계별로 쪼개서 시키세요.',
-      '결과물이 마음에 안 들면 "왜 이렇게 했는지 근거를 대라"고 다시 물어보세요.',
-      '같은 대화창에서 맥락을 이어가면 답변 품질이 올라갑니다. 새 대화 남발 금지.',
-    ];
-    const map = {
-      'claude-pro': [
-        'Projects 기능에 자주 쓰는 문서·자료를 미리 올려두면 매번 붙여넣을 필요가 없어요.',
-        'Artifacts로 코드·문서를 옆 패널에서 실시간 편집·미리보기 하세요.',
-        '긴 문서는 PDF째 던지고 "핵심 5가지만 뽑아줘"가 가장 빠릅니다.',
-      ],
-      'claude-max': [
-        'Claude Code를 터미널에 설치해서 실제 코드베이스에 붙이세요. 채팅창보다 10배 빠릅니다.',
-        'Sonnet과 Opus를 작업별로 구분해 쓰세요. 가벼운 건 Sonnet, 깊은 추론은 Opus.',
-        '한도 무한해 보여도 실제로 쓰면 금방 소진됩니다. 본전 계산은 한 달 단위로.',
-      ],
-      'cursor-pro': [
-        'Cmd+K로 인라인 편집, Cmd+L로 채팅. 두 개만 마스터해도 생산성 2배.',
-        'Agent 모드는 강력하지만 위험합니다. 항상 git commit 후 돌리세요.',
-        '@ 멘션으로 파일·심볼을 참조시키면 환각이 확 줄어요.',
-      ],
-      'chatgpt-plus': [
-        'GPTs에서 본인 업무 특화 봇을 하나 만들어 두면 매일 프롬프트 짤 시간이 줄어요.',
-        '이미지가 필요하면 따로 결제하지 말고 DALL·E 통합 기능부터 써보세요.',
-        '캔버스 모드는 글 다듬기에 최적화돼 있어요. 회의록 정리에 특히 좋아요.',
-      ],
-      'gemini-advanced': [
-        'Gmail·Drive·Docs와 직접 연동되니, 굳이 복붙하지 말고 "내 Drive의 X 문서 요약해줘".',
-        '2M 컨텍스트는 진짜 깁니다. 책 한 권을 통째로 던져도 됩니다.',
-        'Deep Research 모드를 켜면 보고서 초안까지 자동으로 만들어줘요.',
-      ],
-      'perplexity-pro': [
-        '항상 출처 링크를 클릭해서 검증하세요. AI 요약은 가끔 늬앙스를 놓칩니다.',
-        'Deep Research 모드는 5~10분 걸리지만 결과물이 다릅니다. 급하지 않은 조사에 쓰세요.',
-        'Spaces 기능으로 주제별 검색 히스토리를 모아두면 재참조가 쉬워요.',
-      ],
-      'midjourney': [
-        '--ar로 비율, --s로 스타일라이즈, --v로 버전. 이 세 개만 외워도 90% 커버.',
-        '레퍼런스 이미지를 먼저 올린 뒤 "이 스타일로"가 텍스트 묘사보다 정확합니다.',
-        '한 번에 마음에 들 때까지 돌리지 말고, U/V 버튼으로 변형하면서 좁혀가세요.',
-      ],
-      'chatgpt-free': [
-        '무료도 GPT-5 일부 사용 가능합니다. 한도 도달하면 모델이 자동 다운그레이드되니 중요한 작업은 한도 리셋 직후에.',
-        '같은 질문이라도 영어로 한 번 더 물어보면 답변 품질이 다릅니다.',
-        '음성 모드 무료 기능 활용하면 통근길 학습용으로 훌륭합니다.',
-      ],
-      'claude-free': [
-        '무료 한도가 빠르게 소진됩니다. 짧은 질문은 다른 무료 AI로, 글쓰기·추론이 필요할 때만 Claude로.',
-        '시스템 프롬프트 없이도 톤·스타일 지시를 첫 메시지에 명확히 적으세요.',
-        '코드 한 덩이 정도는 무료로도 충분히 처리됩니다. 무리하지 않으면.',
-      ],
-      'gemini-free': [
-        '구글 검색 결과를 함께 가져오니 "최신 정보 알려줘"에 강합니다.',
-        'Drive·Gmail 연동은 무료에서도 일부 작동합니다. 굳이 Advanced 안 가도 돼요.',
-        '이미지 입력 무료라서 영수증·스크린샷 분석에 쓰면 가성비 최고.',
-      ],
-      'perplexity-free': [
-        '검색 횟수에 제한이 있으니 "한 번에 깊게" 묻는 습관을 들이세요.',
-        'Pro Search는 하루 5회 무료. 진짜 중요한 질문에 아껴 쓰세요.',
-        '출처가 약해 보이면 다른 무료 LLM에 교차 검증하세요.',
-      ],
-    };
-    const specific = map[key] || generic;
-    return specific.slice(0, 3);
-  };
-
-  const generateSamplePrompt = (key, userText) => {
-    const snippet = userText.length > 30 ? userText.slice(0, 30) + '...' : userText;
-    const base = snippet || '내가 다루는 업무';
-    const map = {
-      'claude-pro': `다음은 [${base}] 관련 자료야. 핵심 쟁점 3가지를 추리고, 각 쟁점에 대한 찬반 논리를 표로 정리해줘. 마지막에 내가 어떤 결정을 내려야 할지 너의 의견도 한 줄로 덧붙여줘.`,
-      'claude-max': `[${base}] 작업을 단계별 계획으로 나눠줘. 각 단계마다 (1) 예상 소요 시간 (2) 필요한 입력 (3) 산출물 형태를 명시하고, 1단계 산출물부터 바로 만들어줘.`,
-      'cursor-pro': `@codebase 이 프로젝트에서 [${base}] 와 관련된 함수를 찾고, 리팩토링이 필요한 부분 3곳을 지적해줘. 그 다음 가장 우선순위 높은 1곳을 직접 수정해줘.`,
-      'chatgpt-plus': `[${base}] 에 대해 임원 보고용 1슬라이드 요약을 만들어줘. 헤드라인 1줄, 핵심 3가지, 의사결정 요청 사항 1가지 구조로. 톤은 간결·확신 있게.`,
-      'gemini-advanced': `내 Drive에 있는 [${base}] 관련 문서들을 모두 참조해서, 지난 분기 대비 달라진 점을 표로 정리해줘. 출처 문서명도 함께 표시해줘.`,
-      'perplexity-pro': `[${base}] 에 대한 2026년 최신 동향을 조사해줘. 1차 출처(논문·공식 발표) 위주로 5개만 인용하고, 한국어 요약과 함께 원문 링크를 달아줘.`,
-      'midjourney': `[${base}] concept art, cinematic lighting, ultra detailed, 8k, --ar 16:9 --s 250 --v 6`,
-      'chatgpt-free': `[${base}] 를 초등학생도 이해할 수 있게 3문단으로 설명해줘. 비유는 한국 일상에서 가져와줘.`,
-      'claude-free': `[${base}] 에 대해 내가 놓치고 있을 만한 관점 3가지를 짚어줘. 그리고 각 관점에 대해 내가 다음에 무엇을 검토해야 할지 알려줘.`,
-      'gemini-free': `[${base}] 와 관련된 최신 뉴스를 검색해서, 신뢰도 높은 출처 3개만 추리고 핵심을 한 줄씩 요약해줘.`,
-      'perplexity-free': `[${base}] 에 대한 가장 최신 자료 3개를 찾아주고, 각 자료의 결론만 한 문장으로 요약해줘.`,
-    };
-    return map[key] || `[${base}] 에 대해 단계별로 자세히 설명해줘.`;
-  };
-
-  // ---------- 핸들러 ----------
-  const handleStart = () => {
-    setStep(1);
-    setAnimKey((k) => k + 1);
-  };
-
-  const handleSelect = (qid, value) => {
-    setAnswers((prev) => ({ ...prev, [qid]: value }));
-    setTimeout(() => {
-      const next = step + 1;
-      if (next <= 5) {
-        setStep(next);
-        setAnimKey((k) => k + 1);
-      }
-    }, 280);
-  };
-
-  const handleSubmit = () => {
-    if ((answers.q5 || '').trim().length < 10) return;
-    setStep('loading');
-    setAnimKey((k) => k + 1);
-    setTimeout(() => {
-      setResult(buildResult());
-      setStep('result');
-      setAnimKey((k) => k + 1);
-    }, 1500);
-  };
-
-  const handleRestart = () => {
-    setAnswers({ q1: null, q2: null, q3: null, q4: null, q5: '' });
+  const setField = (k, v) => setAnswers((p) => ({ ...p, [k]: v }));
+  const next = () => setStep((s) => s + 1);
+  const prev = () => setStep((s) => Math.max(0, s - 1));
+  const restart = () => {
+    setStep(0);
+    setAnswers({ name: '', team: '', role: '', q1: '', q2: '', q3: '', q4: '', q5: '' });
     setResult(null);
-    setStep('intro');
-    setAnimKey((k) => k + 1);
   };
 
-  // ---------- 진행률 ----------
-  const progress =
-    step === 'intro'
-      ? 0
-      : step === 'loading' || step === 'result'
-      ? 5
-      : Number(step);
+  const selectAndNext = (key, value) => {
+    setField(key, value);
+    setTimeout(next, 220);
+  };
 
-  // ---------- 공통 셸 ----------
+  useEffect(() => {
+    if (step !== 8) return;
+    const rec = getRecommendation(answers);
+    const mat = getMaturity(answers);
+    setResult({
+      ...rec,
+      maturityScore: mat.score,
+      maturityLabel: mat.label,
+      maturityEmoji: mat.emoji,
+      maturityColor: mat.color,
+    });
+
+    sendWebhook({
+      name: answers.name,
+      team: answers.team,
+      role: answers.role || '',
+      q1: answers.q1, q2: answers.q2, q3: answers.q3, q4: answers.q4, q5: answers.q5,
+      recommendedAi: rec.ai,
+      recommendedTier: rec.tier,
+      savings: rec.savings,
+      maturityScore: mat.score,
+      maturityLabel: mat.label,
+    });
+
+    const t = setTimeout(() => setStep(9), 1800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  const progressStep = step >= 1 && step <= 7 ? step : step >= 8 ? 7 : 0;
+  const showProgress = step >= 1 && step <= 7;
+
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-slate-950 via-indigo-950 to-purple-950 text-slate-100">
-      {/* 상단 프로그레스 바 (고정) */}
-      <div className="sticky top-0 z-40 backdrop-blur-md bg-slate-950/70 border-b border-white/5">
-        <div className="max-w-3xl mx-auto px-5 py-3 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 grid place-items-center font-bold text-sm">
-              G
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      {showProgress && (
+        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200">
+          <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+            <div className="text-xs font-medium text-slate-500 tabular-nums">
+              {progressStep}/7
             </div>
-            <div className="text-xs text-slate-400 leading-tight">
-              <div className="font-semibold text-slate-200">GLUCK · AI 진단기</div>
-              <div className="opacity-70">불필요한 구독 막아드립니다</div>
-            </div>
-          </div>
-          <div className="flex-1">
-            <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-400 via-purple-400 to-fuchsia-400 transition-all duration-500"
-                style={{ width: `${(progress / 5) * 100}%` }}
+                className="h-full bg-slate-900 rounded-full transition-all duration-500"
+                style={{ width: `${(progressStep / 7) * 100}%` }}
               />
             </div>
           </div>
-          <div className="text-xs font-mono text-slate-400 tabular-nums">
-            {progress}/5
-          </div>
         </div>
-      </div>
+      )}
 
-      <div className="max-w-3xl mx-auto px-5 py-8 sm:py-12">
-        <div
-          key={animKey}
-          className="animate-[fadeSlide_0.45s_ease-out]"
-          style={{
-            animation: 'fadeSlide 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
-          }}
-        >
-          {step === 'intro' && <IntroScreen onStart={handleStart} />}
-          {typeof step === 'number' && step <= 4 && (
-            <QuestionScreen
-              q={questions[step - 1]}
-              value={answers[questions[step - 1].id]}
-              onSelect={handleSelect}
-              stepNum={step}
+      <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+        <div key={step} className="anim-fade-in">
+          {step === 0 && <Intro onStart={next} />}
+          {step === 1 && (
+            <NameStep value={answers.name} onChange={(v) => setField('name', v)} onNext={next} />
+          )}
+          {step === 2 && (
+            <TeamStep
+              team={answers.team} role={answers.role}
+              onTeam={(v) => setField('team', v)} onRole={(v) => setField('role', v)}
+              onNext={next} onPrev={prev}
             />
           )}
-          {step === 5 && (
-            <OpenScreen
-              value={answers.q5}
-              onChange={(v) => setAnswers((p) => ({ ...p, q5: v }))}
-              onSubmit={handleSubmit}
+          {step >= 3 && step <= 6 && (
+            <QuestionStep
+              qKey={['q1', 'q2', 'q3', 'q4'][step - 3]}
+              question={QUESTIONS[['q1', 'q2', 'q3', 'q4'][step - 3]]}
+              value={answers[['q1', 'q2', 'q3', 'q4'][step - 3]]}
+              onSelect={selectAndNext} onPrev={prev}
             />
           )}
-          {step === 'loading' && <LoadingScreen />}
-          {step === 'result' && result && (
-            <ResultScreen result={result} onRestart={handleRestart} />
+          {step === 7 && (
+            <Q5Step value={answers.q5} onChange={(v) => setField('q5', v)} onSubmit={next} onPrev={prev} />
           )}
+          {step === 8 && <LoadingStep name={answers.name} />}
+          {step === 9 && result && <ResultStep answers={answers} result={result} onRestart={restart} />}
         </div>
       </div>
-
-      {/* 키프레임 */}
-      <style>{`
-        @keyframes fadeSlide {
-          from { opacity: 0; transform: translateY(14px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulseDot {
-          0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; }
-          40% { transform: scale(1.2); opacity: 1; }
-        }
-        @keyframes shimmer {
-          0% { background-position: -400px 0; }
-          100% { background-position: 400px 0; }
-        }
-      `}</style>
     </div>
   );
-};
+}
 
-// ============================================================
-// 인트로
-// ============================================================
-const IntroScreen = ({ onStart }) => (
-  <div className="text-center py-10 sm:py-16">
-    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-slate-300 mb-6">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-      2026년 4월 최신 AI 라인업 반영
-    </div>
-    <h1 className="text-4xl sm:text-6xl font-black tracking-tight mb-4 bg-gradient-to-br from-white via-indigo-100 to-purple-200 bg-clip-text text-transparent">
-      나에게 딱 맞는 AI 찾기
-    </h1>
-    <p className="text-lg sm:text-xl text-slate-300 mb-2">
-      월 30만원 구독료, 진짜 다 필요하신가요?
-    </p>
-    <p className="text-sm text-slate-400 mb-10 max-w-xl mx-auto">
-      5개 질문으로 당신의 사용 패턴을 진단하고, 정말 필요한 AI 한 개만
-      골라드립니다. 과소비를 부추기지 않는, 솔직한 컨설팅이에요.
-    </p>
-
-    <button
-      onClick={onStart}
-      className="group relative inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all duration-300 hover:shadow-purple-500/40 hover:-translate-y-0.5"
-    >
-      진단 시작하기
-      <span className="transition-transform group-hover:translate-x-1">→</span>
-    </button>
-
-    <div className="mt-12 grid grid-cols-3 gap-3 max-w-md mx-auto text-xs">
-      <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-        <div className="text-2xl mb-1">⏱️</div>
-        <div className="text-slate-300">2분이면 끝</div>
-      </div>
-      <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-        <div className="text-2xl mb-1">💸</div>
-        <div className="text-slate-300">평균 30만원 절약</div>
-      </div>
-      <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-        <div className="text-2xl mb-1">🎯</div>
-        <div className="text-slate-300">딱 1개만 추천</div>
-      </div>
-    </div>
-  </div>
-);
-
-// ============================================================
-// 객관식 질문
-// ============================================================
-const QuestionScreen = ({ q, value, onSelect, stepNum }) => (
-  <div>
-    <div className="text-xs font-mono text-indigo-300 mb-2">
-      QUESTION {stepNum} / 5
-    </div>
-    <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-white">
-      {q.title}
-    </h2>
-    <p className="text-sm text-slate-400 mb-8">{q.sub}</p>
-
-    <div className="space-y-3">
-      {q.options.map((opt, idx) => {
-        const selected = value === opt.v;
-        return (
-          <button
-            key={opt.v}
-            onClick={() => onSelect(q.id, opt.v)}
-            className={`group w-full text-left p-4 sm:p-5 rounded-2xl border transition-all duration-200 ${
-              selected
-                ? 'bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border-indigo-400/60 ring-2 ring-indigo-400/40 scale-[1.01]'
-                : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 hover:translate-x-1'
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <div
-                className={`shrink-0 w-9 h-9 rounded-xl grid place-items-center font-bold text-sm transition-colors ${
-                  selected
-                    ? 'bg-indigo-500 text-white'
-                    : 'bg-white/10 text-slate-300 group-hover:bg-white/20'
-                }`}
-              >
-                {selected ? '✓' : ['①', '②', '③', '④', '⑤'][idx]}
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold text-white">{opt.label}</div>
-                <div className="text-xs text-slate-400 mt-0.5">{opt.desc}</div>
-              </div>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  </div>
-);
-
-// ============================================================
-// 주관식
-// ============================================================
-const OpenScreen = ({ value, onChange, onSubmit }) => {
-  const len = (value || '').trim().length;
-  const ok = len >= 10;
+function Intro({ onStart }) {
   return (
-    <div>
-      <div className="text-xs font-mono text-indigo-300 mb-2">
-        QUESTION 5 / 5
+    <div className="text-center py-8 sm:py-16">
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-medium mb-6">
+        <Sparkles size={12} /> GLUCK · 2026
       </div>
-      <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-white">
-        평소 AI로 해결하고 싶은 고민을 적어주세요.
-      </h2>
-      <p className="text-sm text-slate-400 mb-6">
-        구체적일수록 추천이 정확해집니다. 한두 문장이면 충분해요.
+      <h1 className="text-4xl sm:text-5xl font-black text-slate-900 mb-3 tracking-tight">
+        글룩 AI 진단
+      </h1>
+      <p className="text-lg sm:text-xl text-slate-700 mb-2">
+        우리 팀의 AI 활용 현황을 함께 그려봐요
+      </p>
+      <p className="text-sm text-slate-500 mb-10 max-w-md mx-auto leading-relaxed">
+        여러분의 답변이 글룩의 합리적인 AI 예산 수립에 큰 도움이 됩니다.
       </p>
 
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="예: 긴 회의록을 요약하고 싶어요 / 파이썬 코드 리뷰가 필요해요"
-        rows={5}
-        className="w-full p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-400/30 outline-none text-white placeholder-slate-500 resize-none transition-all"
-      />
-      <div className="flex items-center justify-between mt-3 text-xs">
-        <span className={ok ? 'text-emerald-400' : 'text-slate-500'}>
-          {ok ? '✓ 입력 충분합니다' : `최소 10자 이상 (현재 ${len}자)`}
-        </span>
-        <span className="text-slate-500">{len}자</span>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 max-w-sm mx-auto mb-8 shadow-sm">
+        <div className="flex items-center justify-center gap-6 text-sm text-slate-600">
+          <div>
+            <div className="text-2xl mb-1">⏱️</div>
+            <div className="font-medium">1~2분</div>
+          </div>
+          <div className="w-px h-12 bg-slate-200" />
+          <div>
+            <div className="text-2xl mb-1">📋</div>
+            <div className="font-medium">5객관식 + 1주관식</div>
+          </div>
+        </div>
       </div>
 
       <button
-        onClick={onSubmit}
-        disabled={!ok}
-        className={`w-full mt-8 px-8 py-4 rounded-2xl font-semibold transition-all duration-300 ${
-          ok
-            ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/30 hover:-translate-y-0.5'
-            : 'bg-white/5 text-slate-500 cursor-not-allowed'
-        }`}
+        onClick={onStart}
+        className="inline-flex items-center gap-2 px-8 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-semibold shadow-lg shadow-slate-900/10 transition-all hover:-translate-y-0.5"
       >
-        결과 보기 →
+        진단 시작하기 <ArrowRight size={18} />
       </button>
     </div>
   );
+}
+
+function NameStep({ value, onChange, onNext }) {
+  const ok = (value || '').trim().length >= 2;
+  return (
+    <div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">이름을 입력해주세요</h2>
+      <p className="text-slate-500 mb-8 text-sm">진단 결과에 표시될 이름이에요.</p>
+      <input
+        type="text" value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && ok) onNext(); }}
+        placeholder="홍길동"
+        className="w-full px-5 py-4 text-lg bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all"
+        autoFocus
+      />
+      <button
+        onClick={onNext} disabled={!ok}
+        className={`w-full mt-6 py-4 rounded-xl font-semibold transition-all ${
+          ok ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+        }`}
+      >
+        다음 →
+      </button>
+    </div>
+  );
+}
+
+function TeamStep({ team, role, onTeam, onRole, onNext, onPrev }) {
+  const ok = !!team;
+  return (
+    <div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">소속과 직책을 알려주세요</h2>
+      <p className="text-slate-500 mb-8 text-sm">팀별 분석에 활용됩니다.</p>
+
+      <label className="block text-sm font-semibold text-slate-700 mb-2">
+        소속팀 <span className="text-rose-500">*</span>
+      </label>
+      <select
+        value={team} onChange={(e) => onTeam(e.target.value)}
+        className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all mb-6"
+      >
+        <option value="">팀을 선택해주세요</option>
+        {TEAMS.map((t) => (<option key={t} value={t}>{t}</option>))}
+      </select>
+
+      <label className="block text-sm font-semibold text-slate-700 mb-2">
+        직책 <span className="text-slate-400 text-xs">(선택)</span>
+      </label>
+      <input
+        type="text" value={role}
+        onChange={(e) => onRole(e.target.value)}
+        placeholder="예: 대표이사, 이사, 팀장, 책임, 선임, 주임, 사원 등"
+        className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all"
+      />
+
+      <div className="flex gap-3 mt-8">
+        <button onClick={onPrev} className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
+          <ArrowLeft size={16} /> 이전
+        </button>
+        <button
+          onClick={onNext} disabled={!ok}
+          className={`flex-1 py-4 rounded-xl font-semibold transition-all ${
+            ok ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+          }`}
+        >
+          다음 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function QuestionStep({ qKey, question, value, onSelect, onPrev }) {
+  const num = ['Q1', 'Q2', 'Q3', 'Q4'][['q1', 'q2', 'q3', 'q4'].indexOf(qKey)];
+  return (
+    <div>
+      <div className="text-xs font-mono font-bold text-slate-400 mb-2">{num}</div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-8 leading-snug">{question.label}</h2>
+
+      <div className="space-y-3">
+        {question.options.map((opt) => {
+          const sel = value === opt.value;
+          return (
+            <button
+              key={opt.value} onClick={() => onSelect(qKey, opt.value)}
+              className={`w-full text-left p-4 sm:p-5 rounded-2xl border-2 transition-all duration-200 ${
+                sel ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white hover:border-slate-300 hover:-translate-y-0.5 hover:shadow-md'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`shrink-0 w-6 h-6 rounded-full border-2 grid place-items-center ${sel ? 'border-white bg-white' : 'border-slate-300'}`}>
+                  {sel && <CheckCircle2 size={20} className="text-slate-900" />}
+                </div>
+                <div>
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className={`text-xs mt-0.5 ${sel ? 'text-white/70' : 'text-slate-500'}`}>{opt.desc}</div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <button onClick={onPrev} className="mt-6 px-5 py-3 text-slate-500 hover:text-slate-900 transition-all flex items-center gap-1 text-sm">
+        <ArrowLeft size={16} /> 이전
+      </button>
+    </div>
+  );
+}
+
+function Q5Step({ value, onChange, onSubmit, onPrev }) {
+  const len = (value || '').length;
+  const ok = (value || '').trim().length >= 10;
+  return (
+    <div>
+      <div className="text-xs font-mono font-bold text-slate-400 mb-2">Q5</div>
+      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3 leading-snug">
+        평소 AI로 해결하고 싶은 고민이나 업무를 적어주세요
+      </h2>
+      <p className="text-slate-500 mb-6 text-sm">구체적일수록 정확한 추천이 가능해요.</p>
+
+      <textarea
+        value={value} onChange={(e) => onChange(e.target.value.slice(0, 500))}
+        rows={5}
+        placeholder="예: 긴 회의록을 요약하고 싶어요 / 3D 모델링 데이터 분석 자동화가 필요해요"
+        className="w-full px-5 py-4 text-base bg-white border border-slate-200 rounded-2xl focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5 outline-none transition-all resize-none"
+      />
+
+      <div className="flex justify-between mt-2 text-xs">
+        <span className={ok ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
+          {ok ? '✓ 충분합니다' : `최소 10자 이상 (현재 ${len}자)`}
+        </span>
+        <span className="text-slate-400 tabular-nums">{len}/500</span>
+      </div>
+
+      <div className="flex gap-3 mt-8">
+        <button onClick={onPrev} className="px-5 py-4 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all flex items-center gap-1">
+          <ArrowLeft size={16} /> 이전
+        </button>
+        <button
+          onClick={onSubmit} disabled={!ok}
+          className={`flex-1 py-4 rounded-xl font-semibold transition-all ${
+            ok ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/10 hover:-translate-y-0.5' : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+          }`}
+        >
+          결과 보기 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function LoadingStep({ name }) {
+  return (
+    <div className="text-center py-20">
+      <div className="inline-flex gap-1.5 mb-8">
+        <span className="w-3 h-3 rounded-full bg-slate-900 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-3 h-3 rounded-full bg-slate-900 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-3 h-3 rounded-full bg-slate-900 animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+      <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+        {name}님께 딱 맞는 AI를 찾고 있어요
+      </h2>
+      <p className="text-sm text-slate-500">잠시만 기다려주세요…</p>
+    </div>
+  );
+}
+
+const TIER_BADGE = {
+  free: { label: '무료', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  pro:  { label: 'Pro',  cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  max:  { label: 'Max',  cls: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-// ============================================================
-// 로딩
-// ============================================================
-const LoadingScreen = () => (
-  <div className="text-center py-20">
-    <div className="inline-flex gap-2 mb-8">
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="w-3 h-3 rounded-full bg-indigo-400"
-          style={{
-            animation: `pulseDot 1.2s ease-in-out ${i * 0.15}s infinite`,
-          }}
-        />
-      ))}
-    </div>
-    <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
-      당신의 답변을 AI 전문가가 분석 중입니다...
-    </h2>
-    <p className="text-sm text-slate-400">
-      11개 모델 비교, 사용 패턴 매칭, 가성비 계산 중
-    </p>
-    <div className="max-w-xs mx-auto mt-8 space-y-2 text-left">
-      {[
-        '✓ 사용 용도 분석',
-        '✓ 사용량 패턴 분석',
-        '⏳ 예산 대비 가성비 계산',
-        '⏳ 최적 모델 매칭',
-      ].map((s, i) => (
-        <div
-          key={i}
-          className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-300"
-        >
-          {s}
-        </div>
-      ))}
-    </div>
-  </div>
-);
+const MATURITY_COLOR = {
+  purple: 'bg-purple-500',
+  blue:   'bg-blue-500',
+  green:  'bg-emerald-500',
+  amber:  'bg-amber-500',
+  gray:   'bg-slate-400',
+};
 
-// ============================================================
-// 결과
-// ============================================================
-const ResultScreen = ({ result, onRestart }) => {
-  const { top, headline, tone, reasons, monthlySaving, yearlySavingKRW, userText, tips, samplePrompt, ranked } = result;
-
-  const toneLabel = {
-    free: { tag: '무료로 충분', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
-    plus: { tag: '딱 하나만 결제', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
-    max: { tag: '본전 뽑는 헤비유저', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-  }[tone];
+function ResultStep({ answers, result, onRestart }) {
+  const tierBadge = TIER_BADGE[result.tier] || TIER_BADGE.pro;
+  const reasons = getReasons(answers, result.tier);
+  const tips = getTips(answers.q1);
+  const userText = answers.q5 || '';
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* 1. 추천 카드 */}
-      <div
-        className={`relative overflow-hidden rounded-3xl p-8 sm:p-10 bg-gradient-to-br ${top.brand} shadow-2xl`}
-      >
-        <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-white/10 blur-3xl" />
-        <div className="relative">
-          <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${toneLabel.color} bg-white/10 backdrop-blur-sm mb-4`}
-          >
-            {toneLabel.tag}
-          </div>
-          <div className="text-7xl sm:text-8xl mb-4">{top.emoji}</div>
-          <div className="text-sm text-white/80 mb-1">당신에게 추천하는 AI는</div>
-          <h1 className="text-4xl sm:text-5xl font-black text-white mb-3 tracking-tight">
-            {top.name}
-          </h1>
-          <div className="text-white/90 text-sm">
-            {top.tier === 'free'
-              ? '월 0원 · 추가 결제 불필요'
-              : top.tier === 'max'
-              ? `월 약 $${top.price}~ · 헤비유저용`
-              : `월 약 $${top.price} · 가성비 최적`}
-          </div>
+    <div className="space-y-5 pb-12">
+      <div>
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          <h1 className="text-xl font-bold text-slate-900">{answers.name}님의 진단 결과</h1>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
+            {answers.team}{answers.role ? ` · ${answers.role}` : ''}
+          </span>
         </div>
       </div>
 
-      {/* 2. 핵심 한 줄 조언 */}
-      <div className="rounded-2xl p-6 sm:p-7 bg-white/5 border border-white/10">
-        <div className="flex items-start gap-3">
-          <div className="text-3xl shrink-0">💬</div>
+      <div className="rounded-xl bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-100 p-4 flex items-start gap-3">
+        <Heart size={18} className="text-rose-400 shrink-0 mt-0.5" />
+        <p className="text-sm text-slate-700 leading-relaxed">
+          소중한 응답 감사합니다. 여러분의 답변이 글룩의 AI 예산 수립에 직접적인 도움이 됩니다.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-10 text-center shadow-sm">
+        <div className="text-7xl sm:text-8xl mb-5">{result.icon}</div>
+        <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-2">추천 AI</div>
+        <h2 className="text-3xl sm:text-4xl font-black text-slate-900 mb-4 tracking-tight">{result.ai}</h2>
+        <span className={`inline-flex items-center px-3 py-1 rounded-full border text-xs font-semibold ${tierBadge.cls}`}>
+          {tierBadge.label} 티어
+        </span>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex items-start justify-between mb-4">
           <div>
-            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-2">
-              컨설턴트의 솔직한 한마디
+            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">AI 활용 성숙도</div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{result.maturityEmoji}</span>
+              <span className="text-lg font-bold text-slate-900">{result.maturityLabel}</span>
             </div>
-            <p className="text-base sm:text-lg leading-relaxed text-white">
-              {headline}
-            </p>
           </div>
+          <div className="text-right">
+            <div className="text-3xl font-black text-slate-900 tabular-nums">{result.maturityScore}</div>
+            <div className="text-xs text-slate-400">/ 100점</div>
+          </div>
+        </div>
+        <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full ${MATURITY_COLOR[result.maturityColor]} rounded-full transition-all duration-1000`}
+            style={{ width: `${result.maturityScore}%` }}
+          />
         </div>
       </div>
 
-      {/* 3. 추천 이유 */}
-      <div className="rounded-2xl p-6 sm:p-7 bg-white/5 border border-white/10">
-        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <span className="text-xl">🎯</span> 왜 이 AI를 추천하나요?
-        </h3>
+      <div className="bg-white rounded-2xl border border-slate-200 border-l-4 border-l-slate-900 p-6 shadow-sm">
+        <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-2">컨설턴트 메시지</div>
+        <p className="text-slate-700 leading-relaxed">{result.advice}</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">🎯 이 AI를 추천하는 이유</h3>
         <ul className="space-y-3">
           {reasons.map((r, i) => (
-            <li key={i} className="flex gap-3 text-sm text-slate-200 leading-relaxed">
-              <span className="shrink-0 w-6 h-6 rounded-full bg-indigo-500/30 text-indigo-300 grid place-items-center text-xs font-bold mt-0.5">
-                {i + 1}
-              </span>
+            <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
+              <span className="shrink-0 w-6 h-6 rounded-full bg-slate-900 text-white grid place-items-center text-xs font-bold">{i + 1}</span>
               <span>{r}</span>
             </li>
           ))}
         </ul>
       </div>
 
-      {/* 4. 주관식 맞춤 */}
-      <div className="rounded-2xl p-6 sm:p-7 bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border border-purple-500/20">
-        <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-          <span className="text-xl">🛠️</span> 적어주신 고민에 맞춘 활용 팁
-        </h3>
-        <p className="text-sm text-slate-300 mb-5 italic">
-          "특히 적어주신 <span className="text-purple-200">「{userText.length > 40 ? userText.slice(0, 40) + '…' : userText}」</span> 작업에는요…"
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">🛠️ 고민 맞춤 활용 팁</h3>
+        <p className="text-sm text-slate-500 italic mb-4 px-3 py-2 bg-slate-50 rounded-lg">
+          “{userText.length > 60 ? userText.slice(0, 60) + '…' : userText}”
         </p>
-        <ul className="space-y-3 mb-6">
+        <ul className="space-y-3">
           {tips.map((t, i) => (
-            <li key={i} className="flex gap-3 text-sm text-slate-200 leading-relaxed">
-              <span className="shrink-0 text-purple-300 font-bold">▹</span>
+            <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
+              <span className="shrink-0 text-slate-900 font-bold">▹</span>
               <span>{t}</span>
             </li>
           ))}
         </ul>
-
-        <div className="rounded-xl bg-slate-950/60 border border-white/10 p-4">
-          <div className="text-xs uppercase tracking-wider text-purple-300 font-semibold mb-2">
-            바로 써먹는 예시 프롬프트
-          </div>
-          <code className="block text-sm text-slate-100 font-mono leading-relaxed whitespace-pre-wrap break-words">
-            {samplePrompt}
-          </code>
-        </div>
       </div>
 
-      {/* 5. 절약 효과 */}
-      <div className="rounded-2xl p-6 sm:p-7 bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
-        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <span className="text-xl">💰</span> 절약 효과
-        </h3>
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-            <div className="text-xs text-slate-400 mb-1">다 결제했다면</div>
-            <div className="text-xl font-bold text-rose-300 line-through decoration-rose-500/50">
-              $150/월
-            </div>
-            <div className="text-xs text-slate-500">Plus + Max + MJ</div>
+      {result.savings > 0 && (
+        <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 p-6 text-center">
+          <div className="text-xs uppercase tracking-wider text-emerald-600 font-semibold mb-2">예상 효율화 효과</div>
+          <div className="text-3xl font-black text-emerald-700 mb-2 tabular-nums">
+            연간 약 {result.savings.toLocaleString('ko-KR')}원
           </div>
-          <div className="p-4 rounded-xl bg-white/5 border border-emerald-500/30">
-            <div className="text-xs text-emerald-300 mb-1">추천대로 하면</div>
-            <div className="text-xl font-bold text-emerald-300">
-              ${top.price}/월
-            </div>
-            <div className="text-xs text-slate-500">{top.name}</div>
-          </div>
+          <p className="text-sm text-emerald-700/80 leading-relaxed">
+            이번 진단을 통해 글룩이 구독료를 효율화할 수 있는 근거가 확보되었습니다.
+          </p>
         </div>
-        <div className="text-center p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-          <div className="text-xs text-emerald-200 mb-1">연간 예상 절약액</div>
-          <div className="text-3xl font-black text-emerald-300">
-            약 {yearlySavingKRW.toLocaleString('ko-KR')}원
-          </div>
-          <div className="text-xs text-slate-400 mt-1">
-            (월 ${monthlySaving} × 12개월 × ₩1,380 환율 가정)
-          </div>
-        </div>
-      </div>
+      )}
 
-      {/* 6. 차순위 옵션 */}
-      <div className="rounded-2xl p-6 sm:p-7 bg-white/5 border border-white/10">
-        <h3 className="text-sm font-bold text-slate-300 mb-3 uppercase tracking-wider">
-          참고: 후순위 옵션
-        </h3>
-        <div className="space-y-2">
-          {ranked.slice(1, 4).filter(r => r.score > 0).map((r) => (
-            <div
-              key={r.key}
-              className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10"
-            >
-              <div className="text-2xl">{r.emoji}</div>
-              <div className="flex-1">
-                <div className="font-semibold text-white text-sm">{r.name}</div>
-                <div className="text-xs text-slate-400">{r.strength}</div>
-              </div>
-              <div className="text-xs font-mono text-slate-500">
-                {r.tier === 'free' ? 'FREE' : `$${r.price}/mo`}
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-slate-500 mt-4 leading-relaxed">
-          ⚠️ 추천 1개로 충분합니다. 후순위는 "혹시 안 맞으면" 대안일 뿐, 동시
-          결제 권장이 아닙니다.
-        </p>
-      </div>
-
-      {/* 7. 다시 진단 */}
       <div className="text-center pt-4">
         <button
           onClick={onRestart}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-sm font-medium transition-all hover:-translate-y-0.5"
+          className="inline-flex items-center gap-2 px-6 py-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-white hover:shadow-sm transition-all"
         >
-          ↻ 다시 진단하기
+          <RefreshCw size={16} /> 다시 진단하기
         </button>
-        <p className="text-xs text-slate-500 mt-6">
-          GLUCK 임직원 전용 · 본 추천은 일반 가이드이며, 실제 구독 결정은 본인의
-          업무 특성을 고려해주세요.
-        </p>
+        <p className="text-xs text-slate-400 mt-6">GLUCK · 2026</p>
       </div>
     </div>
   );
-};
+}
 
-export default AIRecommender;
+// ============================================================
+// 관리자 모드
+// ============================================================
+function AdminMode() {
+  const [authed, setAuthed] = useState(false);
+  const [data, setData] = useState(null);
+
+  if (!authed) return <AdminLogin onAuth={() => setAuthed(true)} />;
+  if (!data) return <AdminUpload onUploaded={setData} />;
+  return <AdminDashboard data={data} onReset={() => setData(null)} />;
+}
+
+function AdminLogin({ onAuth }) {
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState(false);
+  const submit = () => {
+    if (pw === ADMIN_PASSWORD) onAuth();
+    else { setErr(true); setTimeout(() => setErr(false), 500); }
+  };
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 grid place-items-center p-4">
+      <div className={`bg-white rounded-2xl border border-slate-200 p-8 max-w-md w-full shadow-sm ${err ? 'anim-shake' : ''}`}>
+        <div className="flex items-center gap-2 mb-6">
+          <Lock size={20} className="text-slate-900" />
+          <h1 className="text-2xl font-bold text-slate-900">관리자 모드</h1>
+        </div>
+        <p className="text-sm text-slate-500 mb-6">진단 결과 보고서에 접근하려면 비밀번호를 입력해주세요.</p>
+        <input
+          type="password" value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          placeholder="비밀번호"
+          className={`w-full px-5 py-4 text-base bg-white border rounded-xl focus:ring-4 outline-none transition-all ${
+            err ? 'border-rose-300 focus:ring-rose-100' : 'border-slate-200 focus:border-slate-900 focus:ring-slate-900/5'
+          }`}
+          autoFocus
+        />
+        {err && <div className="text-rose-500 text-sm mt-2">비밀번호가 틀렸습니다</div>}
+        <button onClick={submit} className="w-full mt-6 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-semibold transition-all">
+          확인
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AdminUpload({ onUploaded }) {
+  const [err, setErr] = useState('');
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      if (rows.length < 2) { setErr('데이터가 비어있습니다.'); return; }
+
+      const records = rows.slice(1).map((row) => ({
+        timestamp: row[0] || '',
+        name:      row[1] || '',
+        team:      row[2] || '',
+        role:      row[3] || '',
+        q1:        row[4] || '',
+        q2:        row[5] || '',
+        q3:        row[6] || '',
+        q4:        row[7] || '',
+        q5:        row[8] || '',
+        ai:        row[9] || '',
+        tier:      row[10] || '',
+        savings:   parseInt(row[11], 10) || 0,
+        score:     parseInt(row[12], 10) || 0,
+        grade:     row[13] || '',
+      }));
+
+      onUploaded(records);
+    } catch (e2) {
+      setErr('CSV 파싱에 실패했습니다. 파일 형식을 확인해주세요.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 grid place-items-center p-4">
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 max-w-lg w-full shadow-sm">
+        <div className="flex items-center gap-2 mb-6">
+          <Upload size={20} className="text-slate-900" />
+          <h1 className="text-2xl font-bold text-slate-900">CSV 업로드</h1>
+        </div>
+
+        <div className="bg-slate-50 rounded-xl p-4 mb-6 text-sm text-slate-600 leading-relaxed">
+          <div className="font-semibold text-slate-900 mb-2">📁 데이터 가져오기</div>
+          <div>구글 시트 → <b>파일 → 다운로드 → CSV(.csv)</b> 형식으로 저장한 후 업로드하세요.</div>
+        </div>
+
+        <div className="text-xs text-slate-500 mb-4 leading-relaxed">
+          <div className="font-semibold mb-1">CSV 컬럼 순서:</div>
+          <code className="block p-2 bg-slate-50 rounded text-[10px] break-all">
+            제출시간, 이름, 소속팀, 직책, Q1_용도, Q2_분량, Q3_빈도, Q4_예산, Q5_주관식, 추천AI, 추천티어, 예상절약액, 활용도점수, 활용도등급
+          </code>
+        </div>
+
+        <label className="block">
+          <input type="file" accept=".csv" onChange={handleFile} className="hidden" />
+          <div className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-semibold text-center cursor-pointer transition-all flex items-center justify-center gap-2">
+            <FileText size={18} /> CSV 파일 선택
+          </div>
+        </label>
+
+        {err && (
+          <div className="mt-4 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">{err}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function teamGrade(avg) {
+  if (avg >= 80) return {
+    label: 'AI 선도 팀',
+    color: 'text-purple-700 bg-purple-50 border-purple-200',
+    comment: '팀원들이 AI를 깊이 있게 활용하고 있는 팀입니다. 고급 유료 도구 도입으로 성과를 더 끌어올릴 수 있는 시점입니다.',
+  };
+  if (avg >= 60) return {
+    label: '활발한 활용 팀',
+    color: 'text-blue-700 bg-blue-50 border-blue-200',
+    comment: 'AI를 능숙하게 다루는 팀으로, Pro 티어 일괄 도입 시 생산성 시너지가 기대됩니다.',
+  };
+  if (avg >= 40) return {
+    label: '안정적 사용 팀',
+    color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    comment: 'AI 활용이 안정화된 팀입니다. 맞춤 교육으로 활용 영역을 넓힐 수 있는 여지가 큽니다.',
+  };
+  return {
+    label: '도입 확대 기회 팀',
+    color: 'text-amber-700 bg-amber-50 border-amber-200',
+    comment: 'AI 도입을 확대할 수 있는 팀입니다. 무료 버전부터 업무에 맞춰 점진적으로 도입해보면 좋습니다.',
+  };
+}
+
+function AdminDashboard({ data, onReset }) {
+  const total = data.length;
+  const avgScore = total ? Math.round(data.reduce((s, d) => s + d.score, 0) / total) : 0;
+  const totalSavings = data.reduce((s, d) => s + d.savings, 0);
+
+  const byTeam = {};
+  data.forEach((d) => {
+    if (!byTeam[d.team]) byTeam[d.team] = [];
+    byTeam[d.team].push(d);
+  });
+  const teams = Object.keys(byTeam).sort();
+
+  const q1Map = {};
+  data.forEach((d) => {
+    if (!q1Map[d.q1]) q1Map[d.q1] = { count: 0, scoreSum: 0 };
+    q1Map[d.q1].count++;
+    q1Map[d.q1].scoreSum += d.score;
+  });
+  const q1Labels = {
+    coding: '코딩 및 개발', writing: '문서 작성', general: '일상 사용',
+    image: '이미지 생성', research: '학술 연구',
+  };
+
+  const sorted = [...data].sort((a, b) => b.score - a.score);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 no-print">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <h1 className="text-base sm:text-lg font-bold text-slate-900">글룩 AI 진단 보고서</h1>
+          <div className="flex gap-2">
+            <button onClick={onReset} className="px-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition-all flex items-center gap-1">
+              <Upload size={14} /> 재업로드
+            </button>
+            <button onClick={() => window.print()} className="px-3 py-2 text-xs sm:text-sm bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-all flex items-center gap-1">
+              <Printer size={14} /> PDF 인쇄
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-8 space-y-12">
+        <Section title="전체 요약" icon={<BarChart3 size={20} />}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <Stat label="총 응답자" value={`${total}명`} />
+            <Stat label="평균 활용도" value={`${avgScore}점`} />
+            <Stat label="응답 팀 수" value={`${teams.length}팀`} />
+            <Stat label="총 효율화 예상액" value={`${totalSavings.toLocaleString('ko-KR')}원`} accent />
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+            <h3 className="text-sm font-bold text-slate-900 mb-4">팀별 응답자 수</h3>
+            <div className="space-y-3">
+              {teams.map((t) => {
+                const cnt = byTeam[t].length;
+                const pct = total ? (cnt / total) * 100 : 0;
+                return (
+                  <div key={t}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-slate-700">{t}</span>
+                      <span className="text-slate-500 tabular-nums">{cnt}명</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Section>
+
+        <Section title="팀별 AI 활용도 평가" icon={<Users size={20} />}>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {teams.map((t) => {
+              const members = byTeam[t];
+              const avg = Math.round(members.reduce((s, m) => s + m.score, 0) / members.length);
+              const grade = teamGrade(avg);
+              const savings = members.reduce((s, m) => s + m.savings, 0);
+              const aiCount = {};
+              members.forEach((m) => { aiCount[m.ai] = (aiCount[m.ai] || 0) + 1; });
+              const topAis = Object.entries(aiCount).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([ai]) => ai);
+
+              return (
+                <div key={t} className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900">{t}</h3>
+                      <div className="text-xs text-slate-500">{members.length}명 응답</div>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full border text-xs font-semibold ${grade.color}`}>
+                      {grade.label}
+                    </span>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                      <span>팀 평균 활용도</span>
+                      <span className="font-mono font-bold tabular-nums">{avg}/100</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-slate-900 rounded-full" style={{ width: `${avg}%` }} />
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-500 mb-2">주 추천 AI</div>
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {topAis.map((ai) => (
+                      <span key={ai} className="px-2 py-0.5 bg-slate-100 rounded text-xs text-slate-700">{ai}</span>
+                    ))}
+                  </div>
+
+                  <div className="text-xs text-slate-500 mb-1">팀 효율화 예상액</div>
+                  <div className="text-base font-bold text-emerald-700 mb-3 tabular-nums">
+                    {savings.toLocaleString('ko-KR')}원
+                  </div>
+
+                  <div className="text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+                    💬 {grade.comment}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+
+        <Section title="개인별 AI 활용도 상세" icon={<TrendingUp size={20} />}>
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden print-card shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">이름</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">소속팀</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">직책</th>
+                    <th className="text-right px-4 py-3 font-semibold text-slate-700">점수</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">등급</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">추천 AI</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-700">주요 고민</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((d, i) => (
+                    <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {i < 3 && '👑 '}{d.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{d.team}</td>
+                      <td className="px-4 py-3 text-slate-600">{d.role || '-'}</td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 tabular-nums">{d.score}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{d.grade}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{d.ai}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs max-w-[240px] truncate">
+                        {(d.q5 || '').slice(0, 40)}{(d.q5 || '').length > 40 ? '…' : ''}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Section>
+
+        <Section title="용도별 분포" icon={<BarChart3 size={20} />}>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+            <div className="space-y-4">
+              {Object.entries(q1Map).sort((a, b) => b[1].count - a[1].count).map(([k, v]) => {
+                const pct = total ? (v.count / total) * 100 : 0;
+                const avg = Math.round(v.scoreSum / v.count);
+                return (
+                  <div key={k}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-slate-700">{q1Labels[k] || k}</span>
+                      <span className="text-slate-500 tabular-nums">{v.count}명 · 평균 {avg}점</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-slate-900 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Section>
+
+        <Section title="주관식 답변 모아보기" icon={<FileText size={20} />}>
+          <div className="space-y-6">
+            {teams.map((t) => (
+              <div key={t} className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+                <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  {t}
+                  <span className="text-xs font-normal text-slate-500">({byTeam[t].length}명)</span>
+                </h3>
+                <div className="space-y-3">
+                  {byTeam[t].map((m, i) => (
+                    <div key={i} className="border-l-2 border-slate-200 pl-4 py-1">
+                      <div className="text-xs text-slate-500 mb-1">
+                        <b className="text-slate-700">{m.name}</b>{m.role ? ` · ${m.role}` : ''}
+                      </div>
+                      <div className="text-sm text-slate-700 leading-relaxed">
+                        {m.q5 || '(답변 없음)'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, icon, children }) {
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-200">
+        <span className="text-slate-900">{icon}</span>
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Stat({ label, value, accent }) {
+  return (
+    <div className={`rounded-2xl p-4 print-card ${accent ? 'bg-emerald-50 border border-emerald-200' : 'bg-white border border-slate-200 shadow-sm'}`}>
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      <div className={`text-xl sm:text-2xl font-black tabular-nums ${accent ? 'text-emerald-700' : 'text-slate-900'}`}>{value}</div>
+    </div>
+  );
+}
