@@ -219,48 +219,62 @@ function toArr(v) {
 // 추천 로직 — 다양한 AI 도구 (Claude / ChatGPT / Gemini / Perplexity / Cursor / Midjourney / Runway / Sora)
 // ============================================================
 
-// 도구별 강점 — 결과 화면 "왜 이 AI인가요?" 카드용
+// 도구별 강점 — 결과 화면 "왜 이 AI인가요?" 카드용 (각 3개까지)
 const TOOL_REASONS = {
   'Claude Pro': [
     'Claude는 2026년 코딩(SWE-bench)·긴 문서 분석에서 1위 평가',
     'Artifacts/Projects로 결과물을 옆 패널에서 실시간 편집·미리보기',
+    '한국어 문장력과 톤 조절이 가장 자연스럽다는 평',
   ],
   'Claude Max': [
     'Pro 대비 5~20배 한도 — Rate limit 걱정 없이 헤비 사용 가능',
     'Claude Code CLI로 터미널·IDE에서 코드베이스 전체 작업',
+    'Opus(최상위 모델) 사용량도 충분해 복잡한 추론 반복 가능',
   ],
   'ChatGPT Plus': [
     'GPT-5 + DALL-E + 음성 + GPTs까지 한 구독에 모두 포함',
-    '국내 사용자가 가장 많아 한국어 학습 자료·팁이 가장 풍부',
+    '국내 사용자가 가장 많아 한국어 학습 자료·팁이 풍부',
+    '반복 업무는 GPTs(개인 챗봇)로 자동화해서 시간 절약 가능',
   ],
   'Gemini Advanced': [
     '2M 토큰 컨텍스트 — 책 한 권을 통째로 던질 수 있음',
     'Gmail·Drive·Docs 직접 연동으로 워크스페이스 시너지 극대화',
+    'Deep Research 모드로 리서치 자동화',
   ],
   'Perplexity Pro': [
     '실시간 웹 검색 + 출처 인용으로 팩트체크 신뢰성 1위',
     'Deep Research 모드는 5~10분 만에 보고서급 결과물 생성',
+    'Claude·GPT-5 모델을 선택해서 함께 사용 가능',
   ],
   'Cursor Pro': [
     'IDE 안에서 코드와 직접 상호작용 — 브라우저 왕복 없이 빠름',
     'Agent 모드로 멀티 파일 자동 수정 + 모델(Claude/GPT) 선택 가능',
+    '@codebase 명령으로 프로젝트 전체 컨텍스트 활용',
   ],
   'Runway': [
     '영상 생성 도구 중 안정성·일관성 가장 우수 (Gen-3)',
     '이미지→영상, 텍스트→영상, 마스크 인페인팅까지 풀 파이프라인',
+    '레퍼런스 영상 스타일 전이 기능 제공',
   ],
   'Sora': [
     'OpenAI 영상 모델 — ChatGPT Plus 안에서 추가 비용 없이 사용',
     '최대 20초 일관성 영상 생성 (인물·배경 안정적 유지)',
+    '텍스트 프롬프트만으로 영상 시나리오 구성 가능',
   ],
 };
 
+// 추천 사유 생성 — 단일 도구면 그 도구 강점 2개, 조합이면 각 1개씩
 function reasonsFor(toolNames, extra) {
   const list = [];
-  toolNames.slice(0, 2).forEach((t) => {
-    const r = TOOL_REASONS[t];
-    if (r && r[0]) list.push(r[0]);
-  });
+  if (toolNames.length === 1) {
+    const r = TOOL_REASONS[toolNames[0]] || [];
+    list.push(...r.slice(0, 2));
+  } else {
+    toolNames.slice(0, 2).forEach((t) => {
+      const r = TOOL_REASONS[t];
+      if (r && r[0]) list.push(r[0]);
+    });
+  }
   if (extra) list.push(extra);
   return list.slice(0, 3);
 }
@@ -426,13 +440,13 @@ function getRecommendation(answers) {
       return rec(
         'Cursor Pro', '⌨️', 'pro', 180000,
         `${painLabel}을 고려하면 IDE 통합 코딩 도구 Cursor Pro가 정답입니다. 백엔드로 Claude·GPT-5를 모두 사용할 수 있어 모델 선택의 유연성도 확보됩니다. ${TAIL}`,
-        ['Cursor Pro', 'Claude Pro'],
+        ['Cursor Pro'],
       );
     }
     return rec(
       'Claude Pro', '⚡', 'pro', 180000,
       `${painLabel}을 고려하면 Claude Pro가 가장 확실한 선택입니다. 2026년 기준 코딩 문맥 파악과 긴 코드베이스 이해력에서 압도적입니다. ${TAIL}`,
-      ['Claude Pro', 'ChatGPT Plus'],
+      ['Claude Pro'],
     );
   }
 
@@ -441,20 +455,20 @@ function getRecommendation(answers) {
       return rec(
         'Gemini Advanced', '📜', 'pro', 180000,
         `긴 문서를 자주 다루시는 패턴에는 Gemini Advanced의 2M 토큰 컨텍스트가 결정적입니다. 책 한 권 통째로 던지고 요약·분석이 가능합니다. ${TAIL}`,
-        ['Gemini Advanced', 'Claude Pro'],
+        ['Gemini Advanced'],
       );
     }
     if (pain === 'quality') {
       return rec(
         'Claude Pro', '📝', 'pro', 180000,
         `응답 품질을 중요하게 보시는 패턴에는 Claude Pro가 정답입니다. 한국어 문장 자연스러움과 톤 조절에서 가장 안정적입니다. ${TAIL}`,
-        ['Claude Pro', 'ChatGPT Plus'],
+        ['Claude Pro'],
       );
     }
     return rec(
       'ChatGPT Plus', '💬', 'pro', 180000,
       `다양한 글쓰기 작업에는 ChatGPT Plus가 가장 친숙하고, GPTs로 반복 업무 자동화까지 가능합니다. ${TAIL}`,
-      ['ChatGPT Plus', 'Claude Pro'],
+      ['ChatGPT Plus'],
     );
   }
 
@@ -462,7 +476,7 @@ function getRecommendation(answers) {
     return rec(
       'Perplexity Pro', '🔎', 'pro', 180000,
       `리서치 중심의 사용 패턴에는 Perplexity Pro의 Deep Research가 최적입니다. 5~10분 만에 보고서 수준의 출처 기반 결과를 만들어줍니다. ${TAIL}`,
-      ['Perplexity Pro', 'Claude Pro'],
+      ['Perplexity Pro'],
     );
   }
 
@@ -478,7 +492,7 @@ function getRecommendation(answers) {
     return rec(
       'ChatGPT Plus', '🖼️', 'pro', 180000,
       `이미지 생성에는 ChatGPT Plus의 DALL-E 3로 충분합니다. 텍스트·이미지·음성을 한 구독으로 통합 사용할 수 있어 가장 가성비가 좋습니다. ${TAIL}`,
-      ['ChatGPT Plus', 'Runway'],
+      ['ChatGPT Plus'],
     );
   }
 
@@ -494,13 +508,13 @@ function getRecommendation(answers) {
     return rec(
       'ChatGPT Plus', '💬', 'pro', 180000,
       `이미 Claude를 잘 쓰고 계시니, ChatGPT Plus를 추가하시면 GPTs·DALL-E·음성까지 도구 폭이 크게 넓어집니다. ${TAIL}`,
-      ['ChatGPT Plus', 'Gemini Advanced'],
+      ['ChatGPT Plus'],
     );
   }
   return rec(
     'ChatGPT Plus', '💬', 'pro', 180000,
     `범용 사용에는 ChatGPT Plus 하나로 대부분의 업무가 커버됩니다. ${painLabel}도 유료 구독으로 대부분 풀립니다. ${TAIL}`,
-    ['ChatGPT Plus', 'Claude Pro'],
+    ['ChatGPT Plus'],
   );
 }
 
@@ -547,11 +561,150 @@ function getMaturity(answers) {
   return                  { score, label: '이제 시작하는 분', emoji: '🌰' };
 }
 
+// 주제별 맞춤 팁 (Q6 키워드 매칭용)
+const SUBTOPICS = [
+  {
+    key: 'summary',
+    match: /요약|정리|회의록|녹취|녹음|인터뷰|회의 내용|미팅/,
+    title: '회의록·문서 요약',
+    tips: [
+      { title: '"3단계 구조" 요약 프롬프트', body: '"이 회의록을 (1) 주요 결정사항 (2) 액션 아이템 (3) 미결 논의 3가지로 정리해줘"로 구조를 잡으세요. 자유 형식으로 요약해달라고 하면 놓치는 게 많은데, 구조를 정해주면 누락이 없고 다음 회의에 그대로 활용할 수 있습니다.' },
+      { title: '녹음 파일은 텍스트로 먼저', body: 'AI는 음성 직접 요약보다 텍스트 변환 후 요약이 훨씬 정확합니다. Vrew나 네이버 Clovanote(무료)로 텍스트화한 뒤 Claude/ChatGPT에 던지세요. 긴 회의일수록 차이가 큽니다.' },
+      { title: '참석자별 의견 정리', body: '"참석자 A, B, C의 주요 의견을 각각 3줄로 정리해줘"로 요청하면 누가 어떤 입장인지 한눈에 보입니다. 공유 메일이나 의사결정 리뷰에 그대로 활용 가능해요.' },
+      { title: '다음 회의 아젠다까지 자동', body: '마지막에 "이 회의록 기준, 다음 회의에서 논의해야 할 안건 5개 제안해줘"를 덧붙이면 후속 미팅 준비까지 한 번에 끝납니다.' },
+    ],
+  },
+  {
+    key: 'report',
+    match: /보고서|기획서|제안서|발표자료|슬라이드|ppt|presentation|제안|보고/,
+    title: '보고서·기획서 작성',
+    tips: [
+      { title: '목차부터 확정', body: '20장짜리 보고서를 한 번에 시키면 일관성이 무너집니다. 먼저 "이 주제로 보고서 목차를 5단계 깊이로 짜줘" → 목차 확인·수정 → 섹션별로 본문 작성 → 마지막에 "전체 톤 통일" 순서로 가세요.' },
+      { title: '대상·형식 명시', body: '"잘 써줘"는 막연합니다. "(1) 임원 보고용 (2) 1페이지 요약 (3) 확신 있는 톤"처럼 대상·형식·톤 3가지를 명시하면 결과물이 완전히 달라집니다.' },
+      { title: '"왜 이렇게 썼는지" 묻기', body: '초안이 어색하면 "이 문장을 왜 이렇게 썼는지 근거 3가지 대줘"라고 물어보세요. AI가 자기 선택을 설명하는 과정에서 더 나은 대안이 드러납니다.' },
+      { title: '데이터 주장 뒷받침', body: '"여기 넣을 만한 통계·사례·인용구 3개 제안해줘"를 추가하면 숫자 기반 설득력이 올라갑니다. Perplexity로 출처 확인하면 안전해요.' },
+    ],
+  },
+  {
+    key: 'translation',
+    match: /번역|영어|외국어|영작|영문|중국어|일본어|일어|한글화|localization/,
+    title: '번역 업무',
+    tips: [
+      { title: '"맥락 + 원문 + 목적"을 함께', body: '번역만 요청하면 기계번역 수준이 나옵니다. "이것은 [어떤 상황]에서 [누구에게] 보낼 [이메일/보고서]야. 톤은 [정중/친근/전문적]으로 번역해줘"처럼 맥락을 주면 자연스러워집니다.' },
+      { title: '두 번 번역해서 검증', body: '번역한 결과를 다시 한국어로 역번역(back-translation) 시켜보세요. 의미가 왜곡된 부분이 금방 보입니다. Claude가 이 용도로 특히 정확합니다.' },
+      { title: '전문 용어는 미리 고정', body: '"회사명, 제품명, 기술 용어는 번역하지 말고 원어 유지"를 처음부터 명시하세요. 매번 수정하는 시간이 절반으로 줄어듭니다.' },
+      { title: '영문 이메일은 페르소나 지정', body: '"Harvard MBA 출신 임원이 쓴 이메일 톤"처럼 페르소나를 주면 격식 수준이 안정됩니다. 해외 바이어·파트너 메일에 효과 좋아요.' },
+    ],
+  },
+  {
+    key: 'data',
+    match: /데이터|분석|통계|엑셀|스프레드시트|차트|그래프|수치|숫자|계산|매출|비용|kpi/,
+    title: '데이터 분석·계산',
+    tips: [
+      { title: 'CSV/엑셀은 그대로 붙여넣기', body: '이미지로 찍지 말고 엑셀 데이터를 Ctrl+C → AI에 Ctrl+V 하세요. "이 데이터에서 (1) 전월 대비 증감 (2) 이상치 (3) 인사이트 3가지 뽑아줘" 같은 구조화된 질문이 효과적입니다.' },
+      { title: '엑셀 함수 문의 특화', body: '"[이런 데이터 구조]에서 [이런 결과]를 뽑는 엑셀 함수 알려줘" + 예시 몇 행을 제공하면 VLOOKUP·SUMIFS 같은 복잡한 함수도 바로 만들어줍니다.' },
+      { title: '차트 추천부터', body: '"이 데이터를 시각화하려면 어떤 차트가 적합해? 3가지 옵션과 각 장단점"을 먼저 물어본 뒤 선택하면 엉뚱한 차트 만드는 시간이 절약됩니다.' },
+      { title: '가설 검증형 질문', body: '"이 데이터를 보면 [가설 A]가 맞는지 검증해줘. 반대되는 증거도 같이"로 요청하면 편향 없이 결과가 나옵니다.' },
+    ],
+  },
+  {
+    key: 'comm',
+    match: /메일|이메일|카톡|카카오|메시지|문의|답변|cs|고객|공지|안내|응대/,
+    title: '커뮤니케이션·고객 응대',
+    tips: [
+      { title: '"상황 + 톤 + 길이" 지정', body: '"[이런 상황]의 고객에게 [정중하지만 확실한] 톤으로 [3줄 이내]로 답변해줘"처럼 3가지를 묶어 지시하면 바로 쓸 수 있는 결과가 나옵니다.' },
+      { title: '여러 톤 한 번에 뽑기', body: '"동일 내용을 (1) 매우 정중 (2) 친근한 (3) 단호한 3가지 버전으로" 요청한 뒤 골라 쓰세요. 상황마다 다르게 보내야 할 때 시간이 크게 절약됩니다.' },
+      { title: '자주 쓰는 답변은 GPTs로', body: 'ChatGPT Plus의 GPTs 기능으로 "우리 회사 CS 응대 봇"을 만들어두면 이후엔 상황만 입력하면 톤 맞춰 답이 나옵니다. 10번만 써도 본전 뽑습니다.' },
+      { title: '발송 전 점검 요청', body: '"이 메일을 받는 사람이 오해할 여지가 있는 부분 3개만 짚어줘"를 마지막에 돌리면 사고 방지에 효과적입니다.' },
+    ],
+  },
+  {
+    key: 'idea',
+    match: /아이디어|브레인스토밍|기획|컨셉|발상|제안|신규|기획안|브랜딩|마케팅|네이밍/,
+    title: '아이디어·기획',
+    tips: [
+      { title: '"10개 던지고 3개 고르기"', body: 'AI에 "이 주제로 아이디어 10개 뽑아줘. 뻔한 것 5, 엉뚱한 것 5"라고 시키세요. 평범한 5개에서 기본기를, 엉뚱한 5개에서 영감을 얻어 조합하면 좋은 아이디어가 나옵니다.' },
+      { title: '제약 조건 먼저 주기', body: '"예산 X원, 기간 Y주, 인원 Z명이라는 제약 안에서 실행 가능한 아이디어"처럼 제약을 먼저 주면 실용성이 올라갑니다. 무제한이면 하늘의 구름만 나와요.' },
+      { title: '반대 관점 요청', body: '아이디어 확정 전에 "이 아이디어를 반대하는 사람이라면 어떤 근거로 반대할까? 5가지"를 시켜보세요. 의사결정 전 리스크 체크에 효과적입니다.' },
+      { title: '유사 사례 조사', body: 'Perplexity에 "이와 비슷한 시도를 한 국내외 사례 3개와 각각의 성공/실패 요인"을 검색시키면 바퀴를 다시 발명하는 낭비를 막을 수 있습니다.' },
+    ],
+  },
+  {
+    key: 'debug',
+    match: /에러|버그|오류|크래시|디버깅|exception|error|예외|안돼|안됨|문제가|망가/,
+    title: '에러·디버깅',
+    tips: [
+      { title: '에러 로그 + 코드 + 맥락 3종', body: '에러 메시지 한 줄만 던지지 말고 (1) 전체 스택트레이스 (2) 문제 함수 코드 (3) 이 코드가 어떤 흐름에서 호출되는지 — 3가지를 함께 주세요. 정확도가 완전히 달라집니다.' },
+      { title: '"단계별 해결책 + 트레이드오프"', body: '"왜 발생 → 해결책 3개 → 각 해결책의 장단점 → 추천 순서" 구조로 답해달라고 요청하면 그때만 막는 게 아니라 구조적 이해가 쌓입니다.' },
+      { title: '재현 조건 먼저 묻기', body: '"이 에러를 안정적으로 재현하려면 어떤 조건이 필요한가?"를 먼저 정리하면 디버깅 시간이 절반으로 줍니다.' },
+      { title: '유사 케이스 찾기', body: 'Perplexity로 "[에러 메시지] github issue"를 검색하면 같은 문제를 겪은 사람들의 해결 과정이 바로 나옵니다.' },
+    ],
+  },
+];
+
+function detectQ6Issue(text) {
+  const raw = (text || '').trim();
+  const clean = raw.replace(/\s/g, '');
+  if (clean.length < 10) return { type: 'too_short' };
+  const uniq = new Set(clean.split(''));
+  if (uniq.size <= 2) return { type: 'repetitive' };
+  if (uniq.size <= 4 && clean.length < 25) return { type: 'repetitive' };
+  if (/^(없[어다요음]|모름|모르|해당없|그냥|패스|skip|pass)/.test(clean)) return { type: 'no_concern' };
+  return null;
+}
+
+function matchSubtopic(text) {
+  const lower = (text || '').toLowerCase();
+  for (const sub of SUBTOPICS) {
+    if (sub.match.test(lower)) return sub;
+  }
+  return null;
+}
+
 function getTips(answers) {
   const primary = pickPrimary(answers.q1);
-  const text = (answers.q6 || '').toLowerCase();
+  const rawText = answers.q6 || '';
+  const text = rawText.toLowerCase();
   const wantsVideo = /영상|동영상|비디오|video|movie|short|숏폼|릴스/.test(text);
 
+  // 1. 쓰레기/빈 입력 감지 → 피드백 + 일반 팁
+  const issue = detectQ6Issue(rawText);
+  if (issue) {
+    return {
+      issue,
+      subtopicTitle: null,
+      items: getDefaultTips(primary, wantsVideo),
+    };
+  }
+
+  // 2. 영상 키워드 특수 처리
+  if (wantsVideo) {
+    return {
+      issue: null,
+      subtopicTitle: '영상 콘텐츠 제작',
+      items: getDefaultTips(primary, true),
+    };
+  }
+
+  // 3. 주제 키워드 매칭
+  const matched = matchSubtopic(rawText);
+  if (matched) {
+    return {
+      issue: null,
+      subtopicTitle: matched.title,
+      items: matched.tips,
+    };
+  }
+
+  // 4. Fallback — Q1 기반 기본 팁
+  return {
+    issue: null,
+    subtopicTitle: null,
+    items: getDefaultTips(primary, false),
+  };
+}
+
+function getDefaultTips(primary, wantsVideo) {
   if (wantsVideo) {
     return [
       {
@@ -1225,8 +1378,16 @@ const TIER_BADGE = {
 function ResultStep({ answers, result, onRestart }) {
   const tierBadge = TIER_BADGE[result.tier] || TIER_BADGE.pro;
   const reasons = result.reasons || [];
-  const tips = getTips(answers);
+  const tipResult = getTips(answers);
+  const tips = tipResult.items;
   const userText = answers.q6 || '';
+
+  // 피드백 메시지 (쓰레기/빈 입력일 때)
+  const feedbackMsg = tipResult.issue && {
+    too_short: '적어주신 내용이 너무 짧아서 구체적인 맞춤 팁을 드리기 어려웠어요. 다음엔 "어떤 작업에서 무엇을 개선하고 싶은지" 한 문장으로라도 적어주시면 훨씬 정확한 도움을 드릴 수 있어요. 우선 사용 패턴 기반 기본 팁을 안내드립니다.',
+    repetitive: '입력하신 내용에서 의미를 파악하기 어려웠어요. 혹시 실수로 눌리셨거나, 지금은 떠오르는 고민이 없으신 것 같네요. 일반적으로 유용한 AI 활용 팁을 안내드릴게요. 구체적인 고민이 생기면 다시 진단해주세요.',
+    no_concern: '지금은 특별한 고민이 없으시다고 답해주셨네요. 그 자체로도 의미 있는 응답이에요. AI를 더 적극적으로 활용하고 싶어지는 순간이 오면 유용할 기본 팁을 안내드립니다.',
+  }[tipResult.issue.type];
 
   return (
     <div className="space-y-5 pb-12">
@@ -1273,10 +1434,26 @@ function ResultStep({ answers, result, onRestart }) {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-        <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">🛠️ 고민 맞춤 활용 팁</h3>
-        <p className="text-sm text-slate-500 italic mb-5 px-3 py-2 bg-slate-50 rounded-lg">
-          “{userText.length > 60 ? userText.slice(0, 60) + '…' : userText}”
-        </p>
+        <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+          🛠️ 고민 맞춤 활용 팁
+          {tipResult.subtopicTitle && (
+            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+              {tipResult.subtopicTitle}
+            </span>
+          )}
+        </h3>
+
+        {feedbackMsg ? (
+          <div className="mb-5 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 leading-relaxed flex items-start gap-2">
+            <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+            <div>{feedbackMsg}</div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 italic mb-5 px-3 py-2 bg-slate-50 rounded-lg">
+            “{userText.length > 60 ? userText.slice(0, 60) + '…' : userText}”
+          </p>
+        )}
+
         <ol className="space-y-5">
           {tips.map((t, i) => (
             <li key={i} className="flex gap-4">
