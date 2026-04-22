@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowRight, ArrowLeft, Sparkles, CheckCircle2,
   Upload, Lock, FileText, BarChart3, Users, TrendingUp,
@@ -2483,6 +2483,10 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
           </div>
         </Section>
 
+        <Section title="권장 예산 시뮬레이터" icon={<TrendingUp size={20} />}>
+          <BudgetSimulator data={data} />
+        </Section>
+
         <Section title="개인별 AI 활용도 상세" icon={<TrendingUp size={20} />}>
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden print-card shadow-sm">
             <div className="overflow-x-auto">
@@ -2686,6 +2690,164 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
   );
 }
 
+// ============================================================
+// 권장 예산 시뮬레이터 — 추천 결과를 디폴트로, 슬라이더로 실시간 조정
+// ============================================================
+const SIM_TOOLS = [
+  { key: 'claude_max', name: 'Claude Max',     usd: 150, color: 'bg-purple-500',  ring: 'accent-purple-500',  desc: '헤비 사용자 대상 · Pro의 5~20배 한도' },
+  { key: 'claude_pro', name: 'Claude Pro',     usd: 20,  color: 'bg-orange-500',  ring: 'accent-orange-500',  desc: '추론·코딩·긴 문서 강점' },
+  { key: 'chatgpt',    name: 'ChatGPT Plus',   usd: 20,  color: 'bg-emerald-500', ring: 'accent-emerald-500', desc: 'GPT-5·DALL-E·GPTs 통합' },
+  { key: 'gemini',     name: 'Gemini Advanced',usd: 20,  color: 'bg-blue-500',    ring: 'accent-blue-500',    desc: '2M 컨텍스트·Workspace 연동' },
+  { key: 'perplexity', name: 'Perplexity Pro', usd: 20,  color: 'bg-cyan-500',    ring: 'accent-cyan-500',    desc: '리서치·실시간 검색 특화' },
+  { key: 'cursor',     name: 'Cursor Pro',     usd: 20,  color: 'bg-slate-700',   ring: 'accent-slate-700',   desc: 'IDE 통합 코딩 전용' },
+  { key: 'copilot',    name: 'MS Copilot Pro', usd: 30,  color: 'bg-indigo-500',  ring: 'accent-indigo-500',  desc: 'M365 오피스 통합' },
+  { key: 'runway',     name: 'Runway Standard',usd: 15,  color: 'bg-fuchsia-500', ring: 'accent-fuchsia-500', desc: '영상 생성 Gen-3' },
+];
+
+function countRecommendations(data) {
+  const counts = Object.fromEntries(SIM_TOOLS.map((t) => [t.key, 0]));
+  data.forEach((d) => {
+    const ai = (d.ai || '').toLowerCase();
+    if (ai.includes('claude max')) counts.claude_max++;
+    if (ai.includes('claude pro') || /claude(?!\s*(?:max|무료))/i.test(d.ai || '')) {
+      // "Claude Pro" 또는 단독 "Claude" (Max/무료 제외)
+      if (!ai.includes('max') || ai.includes('claude pro')) {
+        if (ai.includes('claude pro')) counts.claude_pro++;
+      }
+    }
+    if (ai.includes('chatgpt plus')) counts.chatgpt++;
+    if (ai.includes('gemini advanced')) counts.gemini++;
+    if (ai.includes('perplexity pro')) counts.perplexity++;
+    if (ai.includes('cursor pro')) counts.cursor++;
+    if (ai.includes('copilot')) counts.copilot++;
+    if (ai.includes('runway')) counts.runway++;
+  });
+  return counts;
+}
+
+function BudgetSimulator({ data }) {
+  const total = data.length;
+  const defaults = useMemo(() => countRecommendations(data), [data]);
+  const [counts, setCounts] = useState(defaults);
+
+  // data가 바뀌면 디폴트 재반영
+  useEffect(() => { setCounts(defaults); }, [defaults]);
+
+  const totalLicenses = SIM_TOOLS.reduce((s, t) => s + (counts[t.key] || 0), 0);
+  const monthlyUSD = SIM_TOOLS.reduce((s, t) => s + (counts[t.key] || 0) * t.usd, 0);
+  const monthlyKRW = monthlyUSD * KRW_RATE;
+  const yearlyKRW = monthlyKRW * 12;
+
+  const baselineUSD = SIM_TOOLS.reduce((s, t) => s + defaults[t.key] * t.usd, 0);
+  const diffUSD = monthlyUSD - baselineUSD;
+  const diffKRW = diffUSD * KRW_RATE;
+
+  const setTool = (key, val) => setCounts((c) => ({ ...c, [key]: Number(val) }));
+  const reset = () => setCounts(defaults);
+  const allFree = () => setCounts(Object.fromEntries(SIM_TOOLS.map((t) => [t.key, 0])));
+
+  // 사용 가능한 최대값 (총 응답자 수, 또는 디폴트 + 여유 5)
+  const maxFor = (key) => Math.max(total, defaults[key] + 5, 10);
+
+  return (
+    <div className="space-y-4">
+      {/* 합계 카드 */}
+      <div className="bg-white rounded-2xl border-2 border-slate-900 p-6 shadow-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div className="rounded-xl bg-slate-900 text-white p-4">
+            <div className="text-xs text-slate-300 mb-1">월 비용</div>
+            <div className="text-xl sm:text-2xl font-black tabular-nums">{monthlyKRW.toLocaleString('ko-KR')}원</div>
+            <div className="text-[10px] text-slate-400 mt-1">${monthlyUSD.toLocaleString('en-US')}</div>
+          </div>
+          <div className="rounded-xl bg-slate-100 p-4">
+            <div className="text-xs text-slate-500 mb-1">연 비용</div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{yearlyKRW.toLocaleString('ko-KR')}원</div>
+            <div className="text-[10px] text-slate-400 mt-1">월 × 12</div>
+          </div>
+          <div className="rounded-xl bg-slate-100 p-4">
+            <div className="text-xs text-slate-500 mb-1">총 라이선스</div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{totalLicenses}개</div>
+            <div className="text-[10px] text-slate-400 mt-1">전체 응답자 {total}명</div>
+          </div>
+          <div className={`rounded-xl p-4 ${diffUSD === 0 ? 'bg-slate-100' : diffUSD > 0 ? 'bg-rose-50 border border-rose-200' : 'bg-emerald-50 border border-emerald-200'}`}>
+            <div className="text-xs text-slate-500 mb-1">추천값 대비</div>
+            <div className={`text-xl sm:text-2xl font-black tabular-nums ${diffUSD === 0 ? 'text-slate-900' : diffUSD > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+              {diffUSD > 0 ? '+' : diffUSD < 0 ? '−' : '±'}{Math.abs(diffKRW).toLocaleString('ko-KR')}원
+            </div>
+            <div className="text-[10px] text-slate-400 mt-1">월 기준</div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button onClick={reset} className="px-3 py-2 text-xs border border-slate-300 rounded-lg hover:bg-slate-50 flex items-center gap-1">
+            <RefreshCw size={12} /> 추천값으로 리셋
+          </button>
+          <button onClick={allFree} className="px-3 py-2 text-xs border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">
+            전부 0으로
+          </button>
+          <div className="ml-auto text-[11px] text-slate-500 self-center">
+            환율 {KRW_RATE.toLocaleString('ko-KR')}원 적용 · 슬라이더로 인원 조정
+          </div>
+        </div>
+      </div>
+
+      {/* 슬라이더 그리드 */}
+      <div className="grid sm:grid-cols-2 gap-3">
+        {SIM_TOOLS.map((t) => {
+          const cnt = counts[t.key] || 0;
+          const def = defaults[t.key] || 0;
+          const max = maxFor(t.key);
+          const subtotalKRW = cnt * t.usd * KRW_RATE;
+          return (
+            <div key={t.key} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${t.color}`} />
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 text-sm truncate">{t.name}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{t.desc} · ${t.usd}/월</div>
+                  </div>
+                </div>
+                <div className="text-right shrink-0 ml-2">
+                  <div className="text-xl font-black text-slate-900 tabular-nums leading-none">{cnt}</div>
+                  <div className="text-[9px] text-slate-500">명</div>
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min={0}
+                max={max}
+                value={cnt}
+                onChange={(e) => setTool(t.key, e.target.value)}
+                className={`w-full ${t.ring}`}
+                style={{ accentColor: t.color.replace('bg-', '').replace('-500', '') }}
+              />
+
+              <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+                <span>0</span>
+                <span className={def > 0 ? 'font-semibold text-slate-600' : ''}>추천 {def}명</span>
+                <span>{max}</span>
+              </div>
+
+              <div className="mt-2 flex justify-between text-[11px]">
+                <span className="text-slate-500">월 {subtotalKRW.toLocaleString('ko-KR')}원</span>
+                <span className="text-slate-400">연 {(subtotalKRW * 12).toLocaleString('ko-KR')}원</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="text-xs text-slate-500 leading-relaxed px-1">
+        💡 디폴트 슬라이더 값은 응답자들에게 진단 시스템이 추천한 결과를 자동 집계한 것입니다.
+        실제 도입 인원을 조정해서 월·연 예산을 시뮬레이션해보세요.
+        하나의 추천 문구에 두 도구가 함께 있는 경우(예: "Claude Pro + ChatGPT Plus") 둘 다 1로 카운트됩니다.
+      </div>
+    </div>
+  );
+}
+
 const PAYMENT_LABEL = {
   personal: '개인 결제',
   company:  '회사 결제',
@@ -2835,6 +2997,93 @@ function PaymentDistribution({ data, paymentMap, total, byTeam, teams, amountMap
           </div>
         </div>
       )}
+
+      {/* 개인 부담 명단 — 회사 지원 전환 후보 리스트 */}
+      {burdenersCount > 0 && (
+        <PersonalBurdenList data={data} />
+      )}
+    </div>
+  );
+}
+
+// 개인 부담 응답자 명단 — 누구한테 얼마나 지원해야 하는지 한눈에
+function PersonalBurdenList({ data }) {
+  const AMOUNT_RANK = { over200k: 6, '100to200k': 5, '50to100k': 4, '30to50k': 3, '10to30k': 2, under10k: 1, unknown: 0 };
+  const AMOUNT_MID = { under10k: 5000, '10to30k': 20000, '30to50k': 40000, '50to100k': 75000, '100to200k': 150000, over200k: 250000 };
+  const PAY_LABEL = { personal: '전부 개인', mixed: '일부 개인' };
+  const PAY_BADGE = {
+    personal: 'bg-rose-100 text-rose-800 border-rose-200',
+    mixed: 'bg-amber-100 text-amber-800 border-amber-200',
+  };
+
+  const burdeners = data
+    .filter((d) => d.q5Payment === 'personal' || d.q5Payment === 'mixed')
+    .sort((a, b) => (AMOUNT_RANK[b.q5PaymentAmount] || 0) - (AMOUNT_RANK[a.q5PaymentAmount] || 0));
+
+  if (burdeners.length === 0) return null;
+
+  // 도구별 그룹핑 (어떤 도구를 자비로 쓰는지 한눈에 보려고)
+  const totalEstMonthly = burdeners.reduce((s, d) => s + (AMOUNT_MID[d.q5PaymentAmount] || 0), 0);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-6 print-card shadow-sm">
+      <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">🙋 개인 부담 응답자 명단</h3>
+          <div className="text-xs text-slate-500 mt-0.5">회사 지원 전환 우선순위 후보</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider">합계</div>
+          <div className="text-base font-bold text-rose-700 tabular-nums">
+            {burdeners.length}명 · 월 약 {totalEstMonthly.toLocaleString('ko-KR')}원
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto -mx-2">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-y border-slate-200">
+            <tr>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-700">이름</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-700">소속</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-700">결제</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-700">월 부담액</th>
+              <th className="text-left px-3 py-2.5 font-semibold text-slate-700">사용 중 도구</th>
+            </tr>
+          </thead>
+          <tbody>
+            {burdeners.map((d, i) => {
+              const intense = d.q5PaymentAmount === '100to200k' || d.q5PaymentAmount === 'over200k';
+              const amountLabel = AMOUNT_LABEL[d.q5PaymentAmount] || '미응답';
+              return (
+                <tr key={d._id || i} className={`border-b border-slate-100 hover:bg-slate-50 ${intense ? 'bg-rose-50/30' : ''}`}>
+                  <td className="px-3 py-2.5 font-medium text-slate-900">
+                    {intense && '⚠️ '}{d.name}
+                    {d.role && <span className="text-xs text-slate-500 font-normal ml-1">{d.role}</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-600 text-xs">{d.team}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full border text-[10px] font-semibold ${PAY_BADGE[d.q5Payment] || ''}`}>
+                      {PAY_LABEL[d.q5Payment] || d.q5Payment}
+                    </span>
+                  </td>
+                  <td className={`px-3 py-2.5 font-semibold tabular-nums ${intense ? 'text-rose-700' : 'text-slate-700'}`}>
+                    {amountLabel}
+                  </td>
+                  <td className="px-3 py-2.5 text-slate-500 text-xs max-w-[260px] truncate" title={d.q5}>
+                    {d.q5 || '-'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600 leading-relaxed">
+        💡 ⚠️ 표시된 분들은 <b>월 10만원 이상</b> 자비로 부담 중입니다 — 우선 회사 지원 전환을 검토해주세요.
+        "일부 개인" 응답자는 자비 부담분만 회사 결제로 전환하는 것이 가장 효율적입니다.
+      </div>
     </div>
   );
 }
