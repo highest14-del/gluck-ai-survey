@@ -2041,6 +2041,12 @@ const Q1_LABEL = {
   meeting: '회의록 정리', other: '기타',
 };
 const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', training: '교육·학습 니즈', none: '부족함 없음', never: '미사용' };
+const Q4LIMIT_LABEL = {
+  mild: '가끔 답답',
+  moderate: '주 단위 도달',
+  severe: '매일 도달 (심각)',
+  critical: '여러 계정 돌려쓰는 중',
+};
 
 // 티어별 비용 (USD/월)
 // AI 도구 가격표 (USD/월) — 2026년 4월 기준
@@ -2094,36 +2100,57 @@ function generateExecutiveInsights(data, byTeam, q4Map, tierCounts) {
       : '전사 평균 활용도가 아직 높지 않으므로, 무료 도구 활성화와 사내 교육에 우선 투자하는 것이 효율적입니다. 일부 헤비 사용자만 Pro 도입을 검토하세요.',
   });
 
-  // 2. 한도 부족 비중
-  if (limitCount > 0) {
-    const pct = Math.round((limitCount / total) * 100);
-    const monthlyKRW = limitCount * 20 * KRW_RATE;
+  // 2. 한도 부족 응답자 — 명단 포함
+  const limitMembers = data.filter((d) => toArr(d.q4).includes('limit'));
+  if (limitMembers.length > 0) {
+    const pct = Math.round((limitMembers.length / total) * 100);
+    const monthlyKRW = limitMembers.length * 20 * KRW_RATE;
     insights.push({
       icon: pct >= 30 ? '⚠️' : '📈',
-      title: `한도 부족 응답 ${limitCount}명 (${pct}%)`,
+      title: `한도 부족 응답자 ${limitMembers.length}명 (${pct}%)`,
       body: pct >= 30
         ? `전체의 ${pct}%가 무료 한도 부족을 호소합니다. 이들에게 Pro 티어 일괄 지원이 가장 ROI 높은 투자입니다. 예상 비용: 월 약 ${monthlyKRW.toLocaleString('ko-KR')}원.`
         : `한도 부족 호소가 ${pct}%로 아직 부담이 크지 않습니다. 해당 인원만 선별적으로 Pro를 지원하는 게 가장 효율적입니다.`,
+      members: limitMembers.map((d) => ({
+        name: d.name, team: d.team, role: d.role,
+        detail: d.q4Limit ? Q4LIMIT_LABEL[d.q4Limit] || d.q4Limit : '강도 미응답',
+        intense: d.q4Limit === 'severe' || d.q4Limit === 'critical',
+      })),
     });
   }
 
-  // 3. Max 추천자
-  if (tierCounts.max > 0) {
-    const monthlyKRW = tierCounts.max * TIER_USD.max * KRW_RATE;
+  // 3. 핵심 헤비 사용자 (Max 추천) — 명단 포함
+  const maxMembers = data.filter((d) => d.tier === 'max');
+  if (maxMembers.length > 0) {
+    const monthlyKRW = maxMembers.length * TIER_USD.max * KRW_RATE;
     insights.push({
       icon: '👑',
-      title: `핵심 헤비 사용자 ${tierCounts.max}명 식별`,
+      title: `핵심 헤비 사용자 ${maxMembers.length}명 식별`,
       body: `Max 티어를 본전 뽑을 헤비 사용자로 진단됐습니다. 이들의 생산성이 회사 전체에 큰 영향을 주므로 우선 지원하세요. 예상 비용: 월 약 ${monthlyKRW.toLocaleString('ko-KR')}원. 도입 후 실제 사용량을 보고 1개월 단위로 Pro 다운그레이드 여부 검토 권장.`,
+      members: maxMembers.map((d) => ({
+        name: d.name, team: d.team, role: d.role,
+        detail: d.ai || '추천 미상',
+        intense: true,
+      })),
     });
   }
 
-  // 4. 미사용자 / 부족함 없음
-  if (neverCount + noneCount > 0) {
-    const pct = Math.round(((neverCount + noneCount) / total) * 100);
+  // 4. 유료 불필요 응답자 — 명단 포함
+  const lowNeed = data.filter((d) => {
+    const arr = toArr(d.q4);
+    return arr.includes('never') || (arr.includes('none') && arr.length === 1);
+  });
+  if (lowNeed.length > 0) {
+    const pct = Math.round((lowNeed.length / total) * 100);
     insights.push({
       icon: '🌱',
-      title: `유료 불필요 응답 ${neverCount + noneCount}명 (${pct}%)`,
+      title: `유료 불필요 응답자 ${lowNeed.length}명 (${pct}%)`,
       body: `${neverCount}명이 미사용, ${noneCount}명이 무료로 충분하다고 답했습니다. 이들에게는 유료 도구 강제 도입보다 무료 도구 활용 교육 1회가 더 효과적입니다.`,
+      members: lowNeed.map((d) => {
+        const arr = toArr(d.q4);
+        const reason = arr.includes('never') ? '아직 미사용' : '무료로 충분';
+        return { name: d.name, team: d.team, role: d.role, detail: reason, intense: false };
+      }),
     });
   }
 
@@ -2349,6 +2376,38 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
                   <h3 className="text-sm font-bold text-slate-900 leading-tight flex-1">{ins.title}</h3>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">{ins.body}</p>
+
+                {ins.members && ins.members.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
+                      해당 인원 ({ins.members.length}명)
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ins.members.map((m, mi) => (
+                        <span
+                          key={mi}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border ${
+                            m.intense
+                              ? 'bg-rose-50 text-rose-800 border-rose-200'
+                              : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                          title={`${m.team}${m.role ? ' · ' + m.role : ''}${m.detail ? ' · ' + m.detail : ''}`}
+                        >
+                          <b>{m.name}</b>
+                          {m.role && <span className="opacity-70">{m.role}</span>}
+                          <span className="opacity-50">·</span>
+                          <span className="opacity-80">{m.team}</span>
+                          {m.detail && (
+                            <>
+                              <span className="opacity-50">·</span>
+                              <span className={m.intense ? 'font-semibold' : 'opacity-70'}>{m.detail}</span>
+                            </>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
