@@ -682,47 +682,96 @@ function getRecommendation(answers) {
 // ============================================================
 // AI 활용 성숙도 점수 (결과엔 표시 안 하고 관리자/웹훅용)
 // ============================================================
+// AI 활용 성숙도 점수 (max 100, 100점은 매우 드물게 나오도록 세분화)
+//
+// 배점 합계 (이론상 max ~108, cap 100):
+//  - Q3 빈도        max 35
+//  - Q2 분량        max 18
+//  - Q1 용도        max 13 + 다양성 보너스 max 5
+//  - Q4 불편 인식   max 12 + 한도+컨텍스트 동시 +2
+//  - Q5 도구 다양성 max 10
+//  - Q5 결제 적극성 max 5
+//  - Q6 고민 품질   max 12 (길이 + 의미 키워드)
+//  - Q7 의견 적극성 max 6 (길이 + 정책 키워드)
+//  - Q6 가비지 입력 페널티 -5 (ㅇㅇㅇㅇ 같은 입력)
 function getMaturity(answers) {
   let score = 0;
-  // Q3 빈도 (5단계)
-  const q3Map = { rarely: 5, weekly: 15, daily: 25, regular: 40, heavy: 55 };
+
+  // 1) Q3 빈도 (max 35)
+  const q3Map = { rarely: 5, weekly: 12, daily: 20, regular: 28, heavy: 35 };
   score += q3Map[answers.q3] || 0;
 
-  // Q2 분량 (5단계)
-  const q2Map = { oneline: 2, short: 5, medium: 15, large: 22, massive: 28 };
+  // 2) Q2 분량 (max 18)
+  const q2Map = { oneline: 2, short: 5, medium: 10, large: 14, massive: 18 };
   score += q2Map[answers.q2] || 0;
 
-  // Q1 (array) — 용도 중 가장 높은 점수만 반영
-  const q1ScoreMap = {
-    coding: 15, research: 15, analysis: 13, planning: 12, writing: 10, meeting: 10,
-    image: 8, communication: 7, general: 5, other: 8,
+  // 3) Q1 용도 (max 13 + 다양성 5) — 가장 높은 점수 1개 + 다양성 보너스
+  const q1Map = {
+    coding: 13, research: 13, analysis: 11, planning: 9, writing: 9, meeting: 9,
+    image: 7, communication: 6, other: 5, general: 3,
   };
-  const q1Arr = toArr(answers.q1);
-  const q1Max = q1Arr.reduce((m, v) => Math.max(m, q1ScoreMap[v] || 0), 0);
-  score += q1Max;
+  const q1Arr = toArr(answers.q1).filter((v) => v !== 'other' || (answers.q1Other || '').trim());
+  const q1Top = q1Arr.reduce((m, v) => Math.max(m, q1Map[v] || 0), 0);
+  score += q1Top;
+  if (q1Arr.length >= 5) score += 5;
+  else if (q1Arr.length >= 3) score += 3;
 
-  // Q4 (pain point, 다중) — 가장 높은 점수만 반영
-  const q4ScoreMap = { never: 0, none: 5, training: 7, quality: 8, limit: 10, context: 12 };
+  // 4) Q4 불편 인식 (max 12) + 한도+컨텍스트 동시 +2
+  const q4Map = { never: 0, none: 3, training: 5, quality: 7, limit: 9, context: 10 };
   const q4Arr = toArr(answers.q4);
-  const q4Max = q4Arr.reduce((m, v) => Math.max(m, q4ScoreMap[v] || 0), 0);
-  score += q4Max;
+  const q4Top = q4Arr.reduce((m, v) => Math.max(m, q4Map[v] || 0), 0);
+  score += q4Top;
+  if (q4Arr.includes('limit') && q4Arr.includes('context')) score += 2;
 
-  // Q5 (현재 사용 중인 AI 수) — 도구 다양성
+  // 5) Q5 도구 다양성 (max 10)
   const q5Arr = toArr(answers.q5).filter((v) => v !== 'none');
-  score += Math.min(10, q5Arr.length * 3);
+  if (q5Arr.length >= 3) score += 10;
+  else if (q5Arr.length === 2) score += 7;
+  else if (q5Arr.length === 1) score += 4;
 
-  // Q6 주관식 길이
-  const len = (answers.q6 || '').length;
-  if (len >= 100) score += 10;
-  else if (len >= 50) score += 5;
+  // 6) Q5 결제 적극성 (max 5)
+  const pay = answers.q5Payment;
+  const amt = answers.q5PaymentAmount;
+  if (pay === 'company') score += 4;
+  else if (pay === 'mixed') score += 3;
+  else if (pay === 'personal') score += 3;
+  // 월 5만원 이상 본인 부담은 적극성 +1
+  if ((pay === 'personal' || pay === 'mixed') &&
+      (amt === '50to100k' || amt === '100to200k' || amt === 'over200k')) score += 1;
 
-  score = Math.min(100, score);
+  // 7) Q6 고민 품질 (max 12) — 길이 + 작업 의도 키워드
+  const q6 = (answers.q6 || '').trim();
+  const q6Len = q6.length;
+  if (q6Len >= 80) score += 9;
+  else if (q6Len >= 40) score += 6;
+  else if (q6Len >= 10) score += 3;
+  // 작업 의도 키워드 — 구체성 있는 답변에 가산점
+  const intentRe = /자동화|효율|통합|리뷰|리팩토링|분석|개선|최적화|요약|정리|학습|교육|보고서|기획|번역|디자인|코드|데이터|회의록|이메일|업무|시간/gi;
+  const intentHits = (q6.match(intentRe) || []).length;
+  if (intentHits >= 2) score += 3;
+  else if (intentHits >= 1) score += 1;
 
-  if (score >= 80) return { score, label: 'AI 파워유저',     emoji: '💎' };
-  if (score >= 60) return { score, label: '적극 활용자',      emoji: '🚀' };
-  if (score >= 40) return { score, label: '꾸준한 사용자',    emoji: '✨' };
-  if (score >= 20) return { score, label: '탐색 중인 사용자', emoji: '🌱' };
-  return                  { score, label: '이제 시작하는 분', emoji: '🌰' };
+  // 8) Q7 정책 의견 (max 6) — 길이 + 정책 키워드
+  const q7 = (answers.q7 || '').trim();
+  if (q7.length >= 30) score += 4;
+  else if (q7.length >= 5) score += 2;
+  if (/교육|도입|지원|예산|가이드|정책|보안|규정|공유|세션|워크숍|체계|구독/.test(q7)) score += 1;
+
+  // 9) Q6 가비지 입력 페널티 (-5) — "ㅇㅇㅇㅇ" 같은 무성의 답변
+  if (q6Len >= 5) {
+    const uniq = new Set(q6.replace(/\s/g, '').split('')).size;
+    if (uniq <= 2) score -= 5;
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
+  // 6단계 등급 — 100점은 정말 드물게 나오도록 분포 세밀화
+  if (score >= 85) return { score, label: 'AI 마스터',          emoji: '👑' };
+  if (score >= 70) return { score, label: 'AI 파워유저',         emoji: '💎' };
+  if (score >= 55) return { score, label: '적극 활용자',          emoji: '🚀' };
+  if (score >= 40) return { score, label: '꾸준한 사용자',        emoji: '✨' };
+  if (score >= 25) return { score, label: '탐색 중인 사용자',     emoji: '🌱' };
+  return                    { score, label: '도입 초기 단계',     emoji: '🌰' };
 }
 
 // 주제별 맞춤 팁 (Q6 키워드 매칭용)
@@ -1966,13 +2015,17 @@ function AdminUpload({ onUploaded, fetchErr, onRetry }) {
 
 function teamGrade(avg) {
   if (avg >= 80) return { label: 'AI 선도 팀', color: 'text-purple-700 bg-purple-50 border-purple-200',
-    comment: '팀원들이 AI를 깊이 있게 활용하고 있는 팀입니다. 고급 유료 도구 도입으로 성과를 더 끌어올릴 수 있는 시점입니다.' };
-  if (avg >= 60) return { label: '활발한 활용 팀', color: 'text-blue-700 bg-blue-50 border-blue-200',
-    comment: 'AI를 능숙하게 다루는 팀으로, Pro 티어 일괄 도입 시 생산성 시너지가 기대됩니다.' };
-  if (avg >= 40) return { label: '안정적 사용 팀', color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-    comment: 'AI 활용이 안정화된 팀입니다. 맞춤 교육으로 활용 영역을 넓힐 수 있는 여지가 큽니다.' };
-  return { label: '도입 확대 기회 팀', color: 'text-amber-700 bg-amber-50 border-amber-200',
-    comment: 'AI 도입을 확대할 수 있는 팀입니다. 무료 버전부터 업무에 맞춰 점진적으로 도입해보면 좋습니다.' };
+    comment: '팀원들이 AI를 깊이 있게 활용하고 있는 최상위 팀입니다. Max·고급 도구 도입으로 성과를 한 단계 더 끌어올릴 수 있는 시점이며, 다른 팀에 노하우를 전파하는 사내 워크숍을 권장합니다.' };
+  if (avg >= 65) return { label: '활발한 활용 팀', color: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+    comment: 'AI를 능숙하게 다루는 팀으로, Pro 티어 일괄 도입 시 생산성 시너지가 즉시 나타날 것으로 예상됩니다.' };
+  if (avg >= 50) return { label: '안정 사용 팀', color: 'text-blue-700 bg-blue-50 border-blue-200',
+    comment: 'AI 활용이 안정화된 팀입니다. 일부 헤비 사용자에게 Pro 우선 도입 → 효과 검증 후 확대가 안전합니다.' };
+  if (avg >= 35) return { label: '성장 중인 팀', color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    comment: '맞춤 교육과 활용 사례 공유로 활용 영역을 넓힐 수 있는 여지가 큽니다. 무료 도구 활용 가이드부터 시작해보세요.' };
+  if (avg >= 20) return { label: '탐색 단계 팀', color: 'text-amber-700 bg-amber-50 border-amber-200',
+    comment: 'AI를 일부 시도해보는 단계입니다. 사내 무료 도구 활용 워크숍 1회로 활용도가 빠르게 올라갈 수 있는 팀입니다.' };
+  return { label: '도입 검토 팀', color: 'text-slate-700 bg-slate-50 border-slate-200',
+    comment: 'AI 활용이 아직 저조한 팀입니다. 무료 버전 + 입문 교육 1회 → 1~2명 시범 도입 → 점진적 확산 순서를 추천합니다.' };
 }
 
 const Q1_LABEL = {
@@ -1984,8 +2037,12 @@ const Q1_LABEL = {
 const Q4_LABEL = { limit: '한도 부족', quality: '품질 부족', context: '긴 자료 처리', training: '교육·학습 니즈', none: '부족함 없음', never: '미사용' };
 
 // 티어별 비용 (USD/월)
-const TIER_USD = { free: 0, pro: 20, max: 100 };
-const KRW_RATE = 1380;
+// AI 도구 가격표 (USD/월) — 2026년 4월 기준
+// Claude Max: 5x Pro($100) ~ 20x Pro($200) — 헤비 사용자 추천이라 평균 $150로 추산
+// ChatGPT Plus / Claude Pro / Gemini Advanced / Perplexity Pro / Cursor Pro / Copilot Pro: 모두 $20
+// MS Copilot for M365: $30 / Runway Standard $15 / Sora는 ChatGPT Plus 포함
+const TIER_USD = { free: 0, pro: 20, max: 150 };
+const KRW_RATE = 1450;  // 2026년 4월 기준 환율 — 변경 시 1곳만 고치면 전체 반영
 
 function teamBudget(members) {
   const tiers = { free: 0, pro: 0, max: 0 };
@@ -2016,11 +2073,12 @@ function generateExecutiveInsights(data, byTeam, q4Map, tierCounts) {
   const minAvg = teamAvgs.length ? Math.min(...teamAvgs) : 0;
   const gap = maxAvg - minAvg;
 
-  // 1. 전사 활용 단계
+  // 1. 전사 활용 단계 (점수 분포 6단계와 일관된 기준)
   let stage;
-  if (avgScore >= 70) stage = '숙련 단계';
-  else if (avgScore >= 50) stage = '안정 단계';
-  else if (avgScore >= 30) stage = '도입 확산 단계';
+  if (avgScore >= 75) stage = 'AI 성숙 단계';
+  else if (avgScore >= 60) stage = '안정 활용 단계';
+  else if (avgScore >= 45) stage = '확산 단계';
+  else if (avgScore >= 30) stage = '도입 확장 단계';
   else stage = '도입 초기 단계';
   insights.push({
     icon: '📊',
@@ -2045,7 +2103,7 @@ function generateExecutiveInsights(data, byTeam, q4Map, tierCounts) {
 
   // 3. Max 추천자
   if (tierCounts.max > 0) {
-    const monthlyKRW = tierCounts.max * 100 * KRW_RATE;
+    const monthlyKRW = tierCounts.max * TIER_USD.max * KRW_RATE;
     insights.push({
       icon: '👑',
       title: `핵심 헤비 사용자 ${tierCounts.max}명 식별`,
@@ -2073,11 +2131,11 @@ function generateExecutiveInsights(data, byTeam, q4Map, tierCounts) {
   }
 
   // 6. 권장 예산 합계
-  const monthlyUSD = tierCounts.pro * 20 + tierCounts.max * 100;
+  const monthlyUSD = tierCounts.pro * TIER_USD.pro + tierCounts.max * TIER_USD.max;
   insights.push({
     icon: '💰',
     title: `전사 권장 예산: 연 약 ${(monthlyUSD * 12 * KRW_RATE).toLocaleString('ko-KR')}원`,
-    body: `Pro ${tierCounts.pro}명 + Max ${tierCounts.max}명 + 무료 ${tierCounts.free}명 기준, 월 약 ${(monthlyUSD * KRW_RATE).toLocaleString('ko-KR')}원이 적정 예산입니다. (환율 1,380원 가정) 1차 도입 → 1개월 모니터링 → 조정 순서로 진행하면 시행착오를 줄일 수 있습니다.`,
+    body: `Pro ${tierCounts.pro}명 + Max ${tierCounts.max}명 + 무료 ${tierCounts.free}명 기준, 월 약 ${(monthlyUSD * KRW_RATE).toLocaleString('ko-KR')}원이 적정 예산입니다. (환율 ${KRW_RATE.toLocaleString('ko-KR')}원·Pro $${TIER_USD.pro}·Max 평균 $${TIER_USD.max} 가정) 1차 도입 → 1개월 모니터링 → 조정 순서로 진행하면 시행착오를 줄일 수 있습니다.`,
   });
 
   return insights;
@@ -2319,8 +2377,8 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
               )}
             </div>
             <div className="grid grid-cols-3 gap-3 text-xs">
-              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1.5" />Max {tierCounts.max}명 · 월 {(tierCounts.max * 100 * KRW_RATE).toLocaleString('ko-KR')}원</div>
-              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1.5" />Pro {tierCounts.pro}명 · 월 {(tierCounts.pro * 20 * KRW_RATE).toLocaleString('ko-KR')}원</div>
+              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1.5" />Max {tierCounts.max}명 · 월 {(tierCounts.max * TIER_USD.max * KRW_RATE).toLocaleString('ko-KR')}원</div>
+              <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1.5" />Pro {tierCounts.pro}명 · 월 {(tierCounts.pro * TIER_USD.pro * KRW_RATE).toLocaleString('ko-KR')}원</div>
               <div className="text-center"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />무료 {tierCounts.free}명 · 0원</div>
             </div>
           </div>
