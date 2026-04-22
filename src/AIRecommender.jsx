@@ -1829,6 +1829,17 @@ function AdminMode() {
   const [source, setSource] = useState('local'); // 'local' | 'webhook'
   const WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbyHcZ6dzTZ_oFDTYD8iDqFBHaIO2zFsFmbEOj18JmWOY22JjtO61ncCvRnfKDTjkZm79A/exec';
   const useWebhook = WEBHOOK_URL && WEBHOOK_URL !== 'YOUR_APPS_SCRIPT_URL';
+  // 옛날 응답들도 최신 점수 공식으로 재계산해서 표시 (시트의 score는 저장 당시 값이라 갱신 안 됨)
+  const recompute = (records) => records.map((r, i) => {
+    const mat = getMaturity(r);
+    return {
+      ...r,
+      _id: r._id || (r.timestamp ? `${r.timestamp}|${r.name || ''}` : `idx-${i}`),
+      score: mat.score,
+      grade: mat.label,
+    };
+  });
+
   const fetchData = async () => {
     setLoading(true);
     if (useWebhook) {
@@ -1837,12 +1848,7 @@ function AdminMode() {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const json = await res.json();
         if (!Array.isArray(json)) throw new Error('invalid response shape');
-        // 웹훅 응답엔 _id가 없으므로 timestamp|name 조합으로 생성
-        const withIds = json.map((r, i) => ({
-          ...r,
-          _id: r._id || (r.timestamp ? `${r.timestamp}|${r.name || ''}` : `idx-${i}`),
-        }));
-        setData(withIds);
+        setData(recompute(json));
         setSource('webhook');
         setLoading(false);
         return;
@@ -1850,7 +1856,7 @@ function AdminMode() {
         // fallthrough to local
       }
     }
-    setData(loadLocal());
+    setData(recompute(loadLocal()));
     setSource('local');
     setLoading(false);
   };
@@ -1858,7 +1864,7 @@ function AdminMode() {
   const handleDelete = async (id) => {
     if (source === 'local') {
       deleteLocal(id);
-      setData(loadLocal());
+      setData(recompute(loadLocal()));
       return;
     }
 
