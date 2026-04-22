@@ -119,6 +119,132 @@ const EMPLOYEES = [
   { name: '유지호', team: '팩토리팀',   role: '사원' },
 ];
 
+// ============================================================
+// 글룩 사내 AI 활용 사례 (잔디 「AI 활용 연구소」 채널 정리, 2026.04.17~)
+// 진단 보고서에 사례 카드 + 총평 연동에 활용
+// ============================================================
+const INTERNAL_THEMES = [
+  { key: 'all',         label: '전체',          icon: '📚', dot: 'bg-slate-500',   ring: 'border-slate-900 bg-slate-900 text-white',     idle: 'border-slate-200 text-slate-700 hover:border-slate-400' },
+  { key: 'knowledge',   label: '지식 학습·상담', icon: '🧠', dot: 'bg-purple-500',  ring: 'border-purple-600 bg-purple-600 text-white',   idle: 'border-purple-200 text-purple-700 hover:border-purple-400' },
+  { key: 'document',    label: '문서·보고서',    icon: '📝', dot: 'bg-blue-500',    ring: 'border-blue-600 bg-blue-600 text-white',       idle: 'border-blue-200 text-blue-700 hover:border-blue-400' },
+  { key: 'automation',  label: '프로세스 자동화', icon: '⚙️', dot: 'bg-emerald-500', ring: 'border-emerald-600 bg-emerald-600 text-white', idle: 'border-emerald-200 text-emerald-700 hover:border-emerald-400' },
+  { key: 'engineering', label: '설계·엔지니어링', icon: '🛠', dot: 'bg-amber-500',   ring: 'border-amber-600 bg-amber-600 text-white',     idle: 'border-amber-200 text-amber-700 hover:border-amber-400' },
+  { key: 'enablement',  label: '전사 확산 기반', icon: '🌱', dot: 'bg-cyan-500',    ring: 'border-cyan-600 bg-cyan-600 text-white',       idle: 'border-cyan-200 text-cyan-700 hover:border-cyan-400' },
+];
+
+const INTERNAL_CASES = [
+  {
+    name: '홍재옥', team: '경영진', role: '대표',
+    themes: ['knowledge', 'document', 'automation', 'enablement'],
+    tools: ['Claude Opus 4.7', 'Claude Code', 'NotebookLM', 'LangGraph', 'Streamlit'],
+    summary: '정부과제 멀티 에이전트 시스템 + DFAM 학습',
+    champion: '🏆 멀티 에이전트 오케스트레이션',
+    details: [
+      { title: 'DFAM 학습 & 신규 패턴 특허 초안', body: 'NotebookLM에 DFAM 자료·논문 학습 → 신규 패턴 특허 초안 작성, 학습·질의응답 용도.' },
+      { title: '정부과제 멀티 에이전트 시스템 (4/19)', body: '공고문 업로드 → 전략가/기술전문가/사업전문가/정책전문가 에이전트 섹션 분담 작성 → 기술·사업·예산행정 심사위원 에이전트 평가 → 85점 미달 시 자동 재작성 루프(최대 3라운드). 글룩 자산(SLA/다크팩토리, ±30μm 정밀도, 삼성/LG 1차벤더 등) 내장. NIPA 선정작 PDF로 검증 완료, 품질 튜닝 후 팀 배포 예정.' },
+      { title: 'Office 연동 (4/20)', body: 'Word·PPT·Excel에 Claude를 붙여 통합 활용.' },
+    ],
+  },
+  {
+    name: '이수원', team: '출력팀', role: '팀장',
+    themes: ['enablement', 'automation'],
+    tools: ['Gemini', 'Notion AI'],
+    summary: '바이브코딩 마스터 프롬프트 + 노션 AI 자동화',
+    details: [
+      { title: '바이브코딩용 마스터 프롬프트 (Gemini 기반)', body: '"수석 기술 슈퍼바이저 & 프로젝트 무결성 아키텍트" 역할 프롬프트. 비전공자 SOP, Mermaid/ASCII 시각화, 코드 무결성(회귀 테스트·전체 코드 제공), 보안(시크릿 마스킹), 문맥 체크포인트, 트러블슈팅 규약 포함.' },
+      { title: '노션 AI 에이전트로 루틴 업무 자동화', body: '머티리얼라이즈 SW 라이선스 만료일 확인 → 할 일 자동 생성 → 담당자 리마인더 발송.' },
+    ],
+  },
+  {
+    name: '안성준', team: '출력팀', role: '사원',
+    themes: ['automation'],
+    tools: ['ChatGPT'],
+    summary: 'AnyDesk 원격접속 런처 자동화',
+    details: [
+      { title: '원격 접속 런처 프로그램 제작', body: 'ChatGPT에 AnyDesk 바로가기 속성의 인자값 구조를 설명 → 장비별 접속 정보(이름·프로그램·주소·버튼 색/위치)를 버튼 런처화. 반복적인 주소 검색 과정 제거, 원격 접속 업무 단순화.' },
+    ],
+  },
+  {
+    name: '경일규', team: '팩토리팀', role: '수석',
+    themes: ['knowledge', 'engineering'],
+    tools: ['ChatGPT', 'AI Agent'],
+    summary: '설계 상담 + 비전공 분야(유체역학·화학·에너지) 전문지식',
+    details: [
+      { title: 'ChatGPT 전문 지식 상담', body: '설계 초안 작성, 유체역학·화학·에너지 등 비전공 분야 상담.' },
+      { title: '테스트 데이터화 검토', body: 'AI Agent·녹음기 활용해 테스트 결과 데이터화 실무 적용 검토 중.' },
+    ],
+  },
+  {
+    name: '권혁주', team: '팩토리팀', role: '책임',
+    themes: ['document'],
+    tools: ['Claude'],
+    summary: 'SLA 교육 음성 → PPT 자동 변환 (OJT 자료)',
+    details: [
+      { title: '교육 음성 → PPT 변환', body: '경수석 SLA 교육 녹음 → 텍스트 추출 → Claude로 PPT화. 사내 교육/OJT 자료 제작 목적, 결과물 만족도 높음.' },
+    ],
+  },
+  {
+    name: '성두현', team: '후가공팀', role: '팀장',
+    themes: ['enablement'],
+    tools: ['Claude', 'Gemini', 'GPT'],
+    summary: 'Claude 사용 가이드 사내 공유',
+    details: [
+      { title: 'Claude 사용 가이드 공유', body: 'Gemini/GPT 학습 내용을 Claude로 이어 활용하는 유튜브 가이드 공유. 팀 온보딩·사용법 공유 목적.' },
+    ],
+  },
+  {
+    name: '김민정', team: '기획팀', role: '사원',
+    themes: ['document', 'knowledge'],
+    tools: ['NotebookLM'],
+    summary: '마케팅 데이터 심층 분석 (만족도·검색·콘텐츠)',
+    details: [
+      { title: '노트북LM으로 마케팅 데이터 분석', body: '(1) 만족도 조사·사용자 피드백 분석 (2) 검색 데이터 성과 분석 (유입 키워드, 노출·클릭 효율) (3) 콘텐츠 발행 성과 분석 (클릭률, 소재·발송 시간대별 반응). 보고서·데이터표 작업에 활용.' },
+    ],
+  },
+  {
+    name: '허은지', team: '기획팀', role: '주임',
+    themes: ['engineering', 'automation', 'document'],
+    tools: ['AI크론', 'Higgsfield', 'AI Studio', 'Claude'],
+    summary: '이미지/영상 대량 생성 + 마케팅 너처링 자동화',
+    details: [
+      { title: '이미지/영상 생성 (AI크론, Higgsfield)', body: '이미지 한 장으로 다양한 앵글·구도 생성, 대량 영상 생성. 최근 로봇 자동화 영상 제작에 활용.' },
+      { title: '마케팅 자동화 너처링 메일 + 대시보드', body: '세일즈맵 마케팅 셋팅 플로우 녹화 영상 기반. AI Studio + Claude로 자동화 너처링 메일 발송. 대시보드 디자인 작업 진행 중.' },
+    ],
+  },
+  {
+    name: '박이건', team: '후가공팀', role: '사원',
+    themes: ['automation'],
+    tools: ['Claude', 'Airtable API', 'Notion API'],
+    summary: '출고 프로세스 자동화 (사진→Notion 일괄 업로드)',
+    champion: '🏆 풀 파이프라인 자동화',
+    details: [
+      { title: '출고 자동화 시스템', body: '일련번호 입력 → Airtable에서 업체/고객 정보 자동 조회 → 카메라로 출고 사진 자동 촬영 → Notion에 일괄 업로드. Windows 11 미지원 장비는 IVCAM으로 카메라 연동.' },
+      { title: '제작 프로세스', body: '1) 기존 업무 흐름 다이어그램화 → 2) 병목·자동화 포인트 분석 → 3) Airtable·Notion API 구조 설계 → 4) Claude로 코드 작성 → 5) 테스트·피드백 반영.' },
+    ],
+  },
+  {
+    name: '김태완', team: '기획팀', role: '팀장',
+    note: '팩토리 MES 담당',
+    themes: ['automation'],
+    tools: ['Airtable'],
+    summary: '팩토리 MES 메인 DB 통합 (Airtable)',
+    details: [
+      { title: 'MES DB 통합 구축', body: '빌드 완성 이미지, 폐기 이미지, QC 정보, 작업 특이사항, 출고 정보 등 Airtable로 통합 기록.' },
+      { title: '선정 이유', body: '수십만 건 데이터 관리 가능, 확장성·사용성 우수, AI·자동화 도입 용이. 박이건의 출고 자동화 사례를 팩토리에도 참고 적용 예정.' },
+    ],
+  },
+  {
+    name: '유윤종', team: '후가공팀', role: '사원',
+    note: '설계 업무 담당',
+    themes: ['engineering'],
+    tools: ['Claude'],
+    summary: '회전판 설계용 AI 계산기 (3캠 4단계 위상차)',
+    details: [
+      { title: '회전판 설계용 AI 계산기', body: '단일 모터로 틸트 운동 구현을 위한 3개 캠의 4단계 위상차 계산. Claude가 만든 계산기로 변수값 조절 후 설계에 반영. 수학·기하학 계산을 AI에 맡기고 산출값으로 애니메이션·설계 진행.' },
+    ],
+  },
+];
+
 function findEmployee(name) {
   const trimmed = (name || '').trim();
   if (!trimmed) return null;
@@ -2059,10 +2185,26 @@ function generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, am
   else if (avgScore >= 30) { headline = '글룩은 AI 도입 확장 단계로 체계적 지원이 필요합니다'; stage = 'expanding'; }
   else { headline = '글룩은 AI 도입을 본격적으로 시작할 시점입니다'; stage = 'starting'; }
 
+  // ---------- 사례 기반 분석 (잔디 채널) ----------
+  const caseCount = INTERNAL_CASES.length;
+  const automationCases = INTERNAL_CASES.filter((c) => c.themes.includes('automation')).length;
+  const championCount = INTERNAL_CASES.filter((c) => c.champion).length;
+  const champions = INTERNAL_CASES.filter((c) => c.champion).map((c) => `${c.name} ${c.role}(${c.summary})`);
+
   // ---------- 강점 ----------
   const strengths = [];
+  // 사내 사례 강점 (제일 먼저)
+  if (caseCount > 0) {
+    strengths.push(`사내 잔디 채널에 이미 ${caseCount}명의 활용 사례가 축적되어 있습니다 (멀티 에이전트·풀 파이프라인 자동화·MES 통합 등). 일반 중소기업 평균을 상회하는 노하우 자산입니다.`);
+  }
+  if (automationCases >= 3) {
+    strengths.push(`프로세스 자동화 사례가 ${automationCases}건 — 출고(박이건)·MES(김태완)·노션 리마인더(이수원)·원격접속(안성준)·정부과제(홍재옥)로 자동화 노하우가 다층적으로 형성되어 있습니다.`);
+  }
+  if (championCount > 0) {
+    strengths.push(`멀티 에이전트 오케스트레이션 단계까지 진입한 챔피언 ${championCount}명 (${champions.join(', ')}) — 사내 모범 사례로 활용 가능합니다.`);
+  }
   if (tierCounts.max > 0) {
-    strengths.push(`이미 ${tierCounts.max}명의 헤비 사용자가 있어 사내 AI 노하우 자산이 형성되어 있습니다.`);
+    strengths.push(`이미 ${tierCounts.max}명의 헤비 사용자가 진단으로 식별 — 사내 AI 노하우 자산이 형성되어 있습니다.`);
   }
   if (multiToolUsers >= total * 0.4) {
     strengths.push(`응답자의 ${Math.round((multiToolUsers / total) * 100)}%가 2개 이상 AI 도구를 병행 사용 중 — 도구 활용 폭이 넓습니다.`);
@@ -2120,6 +2262,16 @@ function generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, am
   if (topTeam.avg >= 65) {
     midTerm.push(`${topTeam.name}을 'AI 챔피언 팀'으로 지정 → 분기 1회 노하우 공유 세션 운영.`);
   }
+  // 사내 사례 활용 권고
+  if (championCount > 0) {
+    midTerm.push(`잔디 채널 챔피언(${champions.slice(0, 3).join(' / ')})의 사례를 사내 표준 매뉴얼로 정리 → 신규 도입 팀 가이드로 활용.`);
+  }
+  if (automationCases >= 3) {
+    midTerm.push('박이건의 출고 자동화 + 김태완의 MES 통합 + 이수원의 노션 리마인더를 묶어 "글룩 업무 자동화 표준 패턴" 사내 가이드 발행.');
+  }
+  if (INTERNAL_CASES.some((c) => c.themes.includes('automation') && c.tools.some((t) => /agent|langgraph/i.test(t)))) {
+    midTerm.push('홍재옥 대표의 정부과제 멀티 에이전트 시스템을 사내 SaaS화 검토 — 다른 정부지원사업·제안서 작성에도 재활용 가능.');
+  }
   if (gap >= 25) {
     midTerm.push(`하위 팀 대상 맞춤 교육 — ${bottomTeam.name}부터 시작.`);
   }
@@ -2167,11 +2319,18 @@ function generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, am
     body: '같은 결과를 더 적은 토큰으로 — (1) 시스템 프롬프트 재사용 (2) 긴 문서는 한 번에 한 가지만 묻기 (3) "간결하게" 명시 — 3가지 원칙만 사내에 공유해도 헤비 사용자의 한도 도달 빈도가 30% 이상 줄어듭니다.',
   });
 
-  // 노하우 자산화
-  accountOps.push({
-    label: '프롬프트·GPTs 공용 풀 운영',
-    body: '잘 쓴 프롬프트, 자주 쓰는 GPTs, Claude Projects 템플릿을 사내 Notion·Slack 채널에 모으세요. 한 번 잘 만든 자산이 100명에게 복제되는 효과 — 이게 글룩의 진짜 AI 노하우 자산이 됩니다.',
-  });
+  // 노하우 자산화 — 잔디 채널 이미 운영 중이면 그것 강조
+  if (caseCount > 0) {
+    accountOps.push({
+      label: '잔디 「AI 활용 연구소」 채널 공식화',
+      body: `이미 ${caseCount}명의 활용 사례가 잔디 채널에 누적되고 있습니다. 한 단계 더 나아가 (1) 분기별 챔피언 시상 (2) 사례별 재현 가능한 프롬프트·코드 첨부 의무화 (3) 신입 온보딩 필독 자료로 지정 — 이렇게만 해도 채널이 살아있는 사내 자산이 됩니다.`,
+    });
+  } else {
+    accountOps.push({
+      label: '프롬프트·GPTs 공용 풀 운영',
+      body: '잘 쓴 프롬프트, 자주 쓰는 GPTs, Claude Projects 템플릿을 사내 Notion·Slack 채널에 모으세요. 한 번 잘 만든 자산이 100명에게 복제되는 효과 — 이게 글룩의 진짜 AI 노하우 자산이 됩니다.',
+    });
+  }
   if (topTeam.avg >= 60) {
     accountOps.push({
       label: 'AI 챔피언 제도',
@@ -2190,11 +2349,16 @@ function generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, am
   });
 
   // ---------- 마무리 ----------
-  const closing = stage === 'mature'
+  const caseAddendum = caseCount > 0
+    ? ` 특히 잔디 채널의 ${caseCount}개 사례를 보면 글룩은 도구 단순 도입을 넘어 멀티 에이전트·풀 파이프라인 자동화 단계까지 진입한 드문 조직입니다 — 이 자산을 체계화하면 동종업계 대비 2~3년의 도입 격차가 만들어집니다.`
+    : '';
+
+  const closing = (stage === 'mature'
     ? '이미 글룩은 AI를 잘 다루는 조직입니다. 이제는 도구 도입을 넘어 AI를 활용한 새로운 업무 방식을 설계할 시점입니다. 임직원분들의 적극적인 참여에 다시 한 번 감사드립니다.'
     : stage === 'stable' || stage === 'spreading'
     ? '글룩은 AI 활용에서 좋은 출발점에 있습니다. 핵심 사용자 우선 지원 + 전사 교육 두 축을 병행하면 6개월 내 활용도 평균 15~20점 상승이 기대됩니다. 임직원분들의 정직한 답변 덕분에 명확한 액션 플랜을 세울 수 있게 되었습니다.'
-    : '도입 초기는 가장 중요한 시기입니다. 무리한 일괄 도입보다는 핵심 사용자 1~3명에게 시범 도입 → 사내 사례 만들기 → 점진적 확산 순서가 가장 안전하고 효과적입니다. 글룩의 첫 AI 도입 여정에 함께할 수 있어 영광입니다.';
+    : '도입 초기는 가장 중요한 시기입니다. 무리한 일괄 도입보다는 핵심 사용자 1~3명에게 시범 도입 → 사내 사례 만들기 → 점진적 확산 순서가 가장 안전하고 효과적입니다. 글룩의 첫 AI 도입 여정에 함께할 수 있어 영광입니다.'
+  ) + caseAddendum;
 
   return { headline, stage, strengths, weaknesses, shortTerm, midTerm, budget, accountOps, closing, avgScore };
 }
@@ -2926,7 +3090,12 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
           </div>
         </Section>
 
-        {/* AI 컨설턴트 총평 — 보고서 마무리 카드 */}
+        {/* 사내 AI 활용 사례 — 잔디 채널 정리 */}
+        <Section title="🌟 글룩 사내 AI 활용 사례" icon={<Sparkles size={20} />}>
+          <InternalCasesSection />
+        </Section>
+
+        {/* AI 컨설턴트 총평 — 보고서 마무리 카드 (사례 분석 자동 반영) */}
         <FinalAssessmentCard
           assessment={generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, amountMap)}
         />
@@ -3329,6 +3498,156 @@ function PersonalBurdenList({ data }) {
         💡 ⚠️ 표시된 분들은 <b>월 10만원 이상</b> 자비로 부담 중입니다 — 우선 회사 지원 전환을 검토해주세요.
         "일부 개인" 응답자는 자비 부담분만 회사 결제로 전환하는 것이 가장 효율적입니다.
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 사내 AI 활용 사례 섹션 (잔디 채널 기반)
+// ============================================================
+function InternalCasesSection() {
+  const [filter, setFilter] = useState('all');
+  const filtered = filter === 'all'
+    ? INTERNAL_CASES
+    : INTERNAL_CASES.filter((c) => c.themes.includes(filter));
+
+  // 테마별 카운트
+  const themeCount = (key) =>
+    key === 'all' ? INTERNAL_CASES.length : INTERNAL_CASES.filter((c) => c.themes.includes(key)).length;
+
+  // 도구별 활용자 수
+  const toolUsage = {};
+  INTERNAL_CASES.forEach((c) => c.tools.forEach((t) => { toolUsage[t] = (toolUsage[t] || 0) + 1; }));
+  const topTools = Object.entries(toolUsage).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+  return (
+    <div className="space-y-5">
+      {/* 헤더 정보 */}
+      <div className="rounded-2xl bg-white border border-slate-200 p-5 print-card shadow-sm">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div>
+            <div className="text-xs text-slate-500 mb-1">출처: 잔디 「AI 활용 연구소 / 글룩 내부 사례 중심」 토픽</div>
+            <div className="text-xs text-slate-400">2026.04.17 개설 · 개설자: 홍재옥 대표 · 자유롭게 잘된 사례·시행착오·아이디어 공유</div>
+          </div>
+          <div className="flex gap-3 text-center">
+            <div className="px-3 py-1.5 rounded-lg bg-slate-100">
+              <div className="text-xl font-black text-slate-900 tabular-nums leading-none">{INTERNAL_CASES.length}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">활용자</div>
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-slate-100">
+              <div className="text-xl font-black text-slate-900 tabular-nums leading-none">{INTERNAL_THEMES.length - 1}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">활용 축</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 테마 필터 */}
+        <div className="flex flex-wrap gap-2">
+          {INTERNAL_THEMES.map((t) => {
+            const sel = filter === t.key;
+            const cnt = themeCount(t.key);
+            return (
+              <button
+                key={t.key}
+                onClick={() => setFilter(t.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-semibold transition-all ${sel ? t.ring : t.idle + ' bg-white'}`}
+              >
+                <span>{t.icon}</span>
+                <span>{t.label}</span>
+                <span className={`tabular-nums ${sel ? 'opacity-90' : 'opacity-60'}`}>{cnt}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 사례 카드 그리드 */}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map((c, i) => <CaseCard key={c.name + i} c={c} />)}
+      </div>
+
+      {/* 도구 빈도 */}
+      <div className="rounded-2xl bg-white border border-slate-200 p-5 print-card shadow-sm">
+        <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">🧰 사내 활용 도구 TOP 6</h3>
+        <div className="flex flex-wrap gap-2">
+          {topTools.map(([t, n]) => (
+            <span key={t} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+              <span className="font-semibold text-slate-900">{t}</span>
+              <span className="text-slate-500 tabular-nums">{n}명</span>
+            </span>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+          💡 도구 단순 도입을 넘어 <b>멀티 에이전트 오케스트레이션·풀 파이프라인 자동화</b> 단계까지 진입한 사례가 있어, 글룩의 AI 활용 성숙도는 일반 중소기업 평균보다 한 단계 위에 있습니다.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CaseCard({ c }) {
+  const themeMeta = (k) => INTERNAL_THEMES.find((t) => t.key === k);
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 print-card shadow-sm flex flex-col">
+      <div className="flex items-start justify-between mb-2 gap-2">
+        <div className="min-w-0">
+          <div className="font-bold text-slate-900 leading-tight">
+            {c.name} <span className="text-xs font-normal text-slate-500">{c.role}</span>
+          </div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {c.team}{c.note && <span className="ml-1 italic">· {c.note}</span>}
+          </div>
+        </div>
+        {c.champion && (
+          <span className="shrink-0 inline-flex px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold border border-amber-200">
+            챔피언
+          </span>
+        )}
+      </div>
+
+      {/* 테마 도트 */}
+      <div className="flex flex-wrap gap-1 mb-3">
+        {c.themes.map((tk) => {
+          const m = themeMeta(tk);
+          if (!m) return null;
+          return (
+            <span key={tk} className="inline-flex items-center gap-1 text-[10px] text-slate-600">
+              <span className={`w-1.5 h-1.5 rounded-full ${m.dot}`} />
+              {m.label}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* 요약 */}
+      <p className="text-sm text-slate-700 leading-relaxed mb-3 font-medium">{c.summary}</p>
+
+      {/* 도구 칩 */}
+      <div className="flex flex-wrap gap-1 mb-3">
+        {c.tools.map((t) => (
+          <span key={t} className="px-2 py-0.5 rounded bg-slate-100 text-[10px] text-slate-700 font-mono">{t}</span>
+        ))}
+      </div>
+
+      {c.champion && (
+        <div className="text-xs text-amber-700 font-semibold mb-2">{c.champion}</div>
+      )}
+
+      {/* 자세히 펼치기 */}
+      <details className="mt-auto group">
+        <summary className="cursor-pointer list-none inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-900 transition-colors select-none">
+          <span className="inline-block transition-transform group-open:rotate-90">▸</span>
+          자세히 보기
+        </summary>
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2.5">
+          {c.details.map((d, di) => (
+            <div key={di}>
+              <div className="text-xs font-bold text-slate-800 mb-0.5">{d.title}</div>
+              <div className="text-xs text-slate-600 leading-relaxed">{d.body}</div>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
