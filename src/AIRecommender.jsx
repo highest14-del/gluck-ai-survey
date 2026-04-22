@@ -2378,35 +2378,36 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
                 <p className="text-xs text-slate-600 leading-relaxed">{ins.body}</p>
 
                 {ins.members && ins.members.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-slate-100">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
-                      해당 인원 ({ins.members.length}명)
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
+                  <details className="mt-3 group">
+                    <summary className="cursor-pointer list-none inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-900 transition-colors select-none">
+                      <span className="inline-block transition-transform group-open:rotate-90">▸</span>
+                      인원 {ins.members.length}명 보기
+                    </summary>
+                    <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
                       {ins.members.map((m, mi) => (
-                        <span
+                        <div
                           key={mi}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border ${
-                            m.intense
-                              ? 'bg-rose-50 text-rose-800 border-rose-200'
-                              : 'bg-slate-50 text-slate-700 border-slate-200'
+                          className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md ${
+                            m.intense ? 'bg-rose-50' : 'bg-slate-50'
                           }`}
-                          title={`${m.team}${m.role ? ' · ' + m.role : ''}${m.detail ? ' · ' + m.detail : ''}`}
                         >
-                          <b>{m.name}</b>
-                          {m.role && <span className="opacity-70">{m.role}</span>}
-                          <span className="opacity-50">·</span>
-                          <span className="opacity-80">{m.team}</span>
+                          <span className="font-semibold text-slate-900 min-w-0">
+                            {m.name}{m.role && <span className="font-normal text-slate-500 ml-0.5">{m.role}</span>}
+                          </span>
+                          <span className="text-slate-400">·</span>
+                          <span className="text-slate-600">{m.team}</span>
                           {m.detail && (
                             <>
-                              <span className="opacity-50">·</span>
-                              <span className={m.intense ? 'font-semibold' : 'opacity-70'}>{m.detail}</span>
+                              <span className="text-slate-300 ml-auto pl-2">·</span>
+                              <span className={m.intense ? 'text-rose-700 font-medium' : 'text-slate-500'}>
+                                {m.detail}
+                              </span>
                             </>
                           )}
-                        </span>
+                        </div>
                       ))}
                     </div>
-                  </div>
+                  </details>
                 )}
               </div>
             ))}
