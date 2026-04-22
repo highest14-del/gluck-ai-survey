@@ -2019,6 +2019,186 @@ function AdminUpload({ onUploaded, fetchErr, onRetry }) {
   );
 }
 
+// ============================================================
+// AI 컨설턴트 총평 — 데이터 기반 자동 생성 (보고서 마지막 카드)
+// ============================================================
+function generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, amountMap) {
+  const total = data.length;
+  if (total === 0) return null;
+
+  const avgScore = Math.round(data.reduce((s, d) => s + (Number(d.score) || 0), 0) / total);
+  const teams = Object.keys(byTeam);
+  const teamAvgs = teams.map((t) => ({
+    name: t,
+    avg: Math.round(byTeam[t].reduce((s, m) => s + (Number(m.score) || 0), 0) / byTeam[t].length),
+    count: byTeam[t].length,
+  }));
+  const topTeam = [...teamAvgs].sort((a, b) => b.avg - a.avg)[0];
+  const bottomTeam = [...teamAvgs].sort((a, b) => a.avg - b.avg)[0];
+  const gap = topTeam.avg - bottomTeam.avg;
+
+  const limitN = q4Map['limit'] || 0;
+  const trainingN = q4Map['training'] || 0;
+  const neverN = q4Map['never'] || 0;
+  const noneN = q4Map['none'] || 0;
+  const lowNeedN = neverN + noneN;
+  const personalN = paymentMap['personal'] || 0;
+  const mixedN = paymentMap['mixed'] || 0;
+  const highBurden = (amountMap['100to200k'] || 0) + (amountMap['over200k'] || 0);
+  const multiToolUsers = data.filter((d) => toArr(d.q5).filter((v) => v !== 'none').length >= 2).length;
+
+  const monthlyUSD = tierCounts.pro * TIER_USD.pro + tierCounts.max * TIER_USD.max;
+  const yearlyKRW = monthlyUSD * 12 * KRW_RATE;
+
+  // ---------- 한 줄 진단 ----------
+  let headline;
+  let stage;
+  if (avgScore >= 75) { headline = '글룩은 AI 활용 성숙 단계에 진입했습니다'; stage = 'mature'; }
+  else if (avgScore >= 60) { headline = '글룩은 AI 안정 활용 단계에 있습니다'; stage = 'stable'; }
+  else if (avgScore >= 45) { headline = '글룩은 AI 도입 확산 단계로 본격 가속이 필요한 시점입니다'; stage = 'spreading'; }
+  else if (avgScore >= 30) { headline = '글룩은 AI 도입 확장 단계로 체계적 지원이 필요합니다'; stage = 'expanding'; }
+  else { headline = '글룩은 AI 도입을 본격적으로 시작할 시점입니다'; stage = 'starting'; }
+
+  // ---------- 강점 ----------
+  const strengths = [];
+  if (tierCounts.max > 0) {
+    strengths.push(`이미 ${tierCounts.max}명의 헤비 사용자가 있어 사내 AI 노하우 자산이 형성되어 있습니다.`);
+  }
+  if (multiToolUsers >= total * 0.4) {
+    strengths.push(`응답자의 ${Math.round((multiToolUsers / total) * 100)}%가 2개 이상 AI 도구를 병행 사용 중 — 도구 활용 폭이 넓습니다.`);
+  }
+  if (gap <= 20 && teams.length >= 3) {
+    strengths.push(`팀 간 활용도 격차가 ${gap}점 이내로 균형잡힌 분포를 보이고 있습니다.`);
+  }
+  if (topTeam.avg >= 70) {
+    strengths.push(`${topTeam.name}이 ${topTeam.avg}점으로 사내 AI 활용 모범 사례 후보입니다.`);
+  }
+  if (strengths.length === 0) {
+    strengths.push('아직 명확한 강점은 형성 단계 — 첫 6개월 도입 결과로 강점을 만들어갈 시점입니다.');
+  }
+
+  // ---------- 약점·리스크 ----------
+  const weaknesses = [];
+  if (gap >= 30) {
+    weaknesses.push(`${topTeam.name}(${topTeam.avg}점)과 ${bottomTeam.name}(${bottomTeam.avg}점)의 격차가 ${gap}점으로 큽니다. 사내 활용 격차가 생산성 격차로 이어질 수 있습니다.`);
+  }
+  if (limitN >= total * 0.3) {
+    weaknesses.push(`${limitN}명(${Math.round((limitN / total) * 100)}%)이 한도 부족을 호소 — 회사 차원 Pro 지원 공백이 명확합니다.`);
+  }
+  if (highBurden > 0) {
+    weaknesses.push(`${highBurden}명이 월 10만원 이상을 자비로 부담 중 — 핵심 사용자에 대한 회사 지원이 시급합니다.`);
+  } else if (personalN >= total * 0.3) {
+    weaknesses.push(`개인 결제 응답자가 ${personalN}명(${Math.round((personalN / total) * 100)}%)에 달합니다 — 회사 차원 도구 정책이 부재한 신호입니다.`);
+  }
+  if (lowNeedN >= total * 0.4) {
+    weaknesses.push(`AI 도입 미체감 응답자가 ${lowNeedN}명(${Math.round((lowNeedN / total) * 100)}%) — 도입 의지·교육 격차 해소가 필요합니다.`);
+  }
+  if (trainingN >= 3) {
+    weaknesses.push(`${trainingN}명이 심화 교육 니즈를 표명 — 도구만 주는 것 외 활용법 교육 인프라 필요.`);
+  }
+
+  // ---------- 단기 액션 (1개월 내) ----------
+  const shortTerm = [];
+  if (tierCounts.max > 0) {
+    shortTerm.push(`핵심 헤비 사용자 ${tierCounts.max}명에게 Claude Max(또는 Pro+조합) 우선 지원 — 즉시 도입.`);
+  }
+  if (limitN > 0) {
+    shortTerm.push(`한도 부족 응답자 ${limitN}명에 Pro 라이선스 지급 — 개인별 ${(20 * KRW_RATE).toLocaleString('ko-KR')}원/월.`);
+  }
+  if (highBurden > 0) {
+    shortTerm.push(`자비 월 10만원+ 부담자 ${highBurden}명 명단 확보 → 전액 회사 지원 전환.`);
+  }
+  if (lowNeedN >= 3 || trainingN >= 3) {
+    shortTerm.push('전사 1시간 AI 활용 입문 워크숍 1회 개최 — 무료 도구 위주, 실무 사례 중심.');
+  }
+  if (shortTerm.length === 0) {
+    shortTerm.push('현재 큰 결손은 없음 — 응답 누적 후 분기 단위로 재점검 권장.');
+  }
+
+  // ---------- 중기 액션 (3~6개월) ----------
+  const midTerm = [];
+  if (topTeam.avg >= 65) {
+    midTerm.push(`${topTeam.name}을 'AI 챔피언 팀'으로 지정 → 분기 1회 노하우 공유 세션 운영.`);
+  }
+  if (gap >= 25) {
+    midTerm.push(`하위 팀 대상 맞춤 교육 — ${bottomTeam.name}부터 시작.`);
+  }
+  midTerm.push('사내 AI 활용 가이드라인 수립 — 보안·저작권·고객 데이터 처리 기준 명시.');
+  midTerm.push('분기별 재진단 (이 설문 다시 돌리기) — 도입 효과 정량 측정.');
+  if (tierCounts.max > 0 || limitN >= 5) {
+    midTerm.push('1개월 단위 Pro/Max 사용량 리뷰 — 다운그레이드/업그레이드 후보 선별.');
+  }
+
+  // ---------- 예산 권고 ----------
+  const budget = total > 0
+    ? `1차 도입 예산은 연 약 ${yearlyKRW.toLocaleString('ko-KR')}원이 적정선입니다. 핵심 헤비 사용자(Max)부터 시작 → 한도 부족자(Pro) 확대 → 일반 사용자 점진적 흡수 순서로 진행하면 시행착오를 최소화할 수 있습니다. 환율(${KRW_RATE.toLocaleString('ko-KR')}원·Max 평균 $${TIER_USD.max}) 변동 시 재산정 필요.`
+    : '응답 누적 후 산정 가능합니다.';
+
+  // ---------- 노하우 자산화 · 계정·토큰 운영 ----------
+  const accountOps = [];
+  // 계정 관리
+  if (personalN + mixedN >= total * 0.3) {
+    accountOps.push({
+      label: '회사 계정 일원화',
+      body: `현재 자비 부담 비율이 ${Math.round(((personalN + mixedN) / total) * 100)}%로 분산되어 있습니다. 회사 명의 통합 계정으로 전환하면 (1) Team Plan 단가 절감 (2) 퇴사자 데이터 회수 가능 (3) 보안·감사 추적 가능 — 3가지 이점이 한 번에 확보됩니다.`,
+    });
+  }
+  if (tierCounts.pro + tierCounts.max >= 5) {
+    accountOps.push({
+      label: 'Team Plan 활용',
+      body: `Pro·Max 라이선스가 5개 이상이면 Claude Team($25/seat·5명+ 시작) 또는 ChatGPT Team($25/seat·2명+ 시작) 같은 팀 플랜이 개별 결제 대비 관리·보안·공유 측면에서 유리합니다. 5명 이상 단위로 묶어 일괄 가입 권장.`,
+    });
+  } else {
+    accountOps.push({
+      label: '계정 발급·회수 SOP 수립',
+      body: '입사 시 즉시 발급, 퇴사 시 즉시 회수하는 표준 절차를 경영지원팀이 보유하면 라이선스 누수와 데이터 유출 리스크를 동시에 줄일 수 있습니다.',
+    });
+  }
+
+  // 토큰·한도 관리
+  if (tierCounts.max > 0 || limitN > 0) {
+    accountOps.push({
+      label: '한도 모니터링 정례화',
+      body: `Pro/Max 라이선스는 도입 후 1개월 단위로 실제 사용량을 점검해야 ROI가 보장됩니다. 한도의 30% 미만 사용 → Pro 다운그레이드 / 한도 90%+ 자주 도달 → Max 업그레이드 식으로 분기별 재배치하면 예산을 ${Math.round(yearlyKRW * 0.15).toLocaleString('ko-KR')}원(약 15%)까지 절감 가능합니다.`,
+    });
+  }
+  accountOps.push({
+    label: '토큰 효율 프롬프트 가이드',
+    body: '같은 결과를 더 적은 토큰으로 — (1) 시스템 프롬프트 재사용 (2) 긴 문서는 한 번에 한 가지만 묻기 (3) "간결하게" 명시 — 3가지 원칙만 사내에 공유해도 헤비 사용자의 한도 도달 빈도가 30% 이상 줄어듭니다.',
+  });
+
+  // 노하우 자산화
+  accountOps.push({
+    label: '프롬프트·GPTs 공용 풀 운영',
+    body: '잘 쓴 프롬프트, 자주 쓰는 GPTs, Claude Projects 템플릿을 사내 Notion·Slack 채널에 모으세요. 한 번 잘 만든 자산이 100명에게 복제되는 효과 — 이게 글룩의 진짜 AI 노하우 자산이 됩니다.',
+  });
+  if (topTeam.avg >= 60) {
+    accountOps.push({
+      label: 'AI 챔피언 제도',
+      body: `${topTeam.name} 같은 활용도 높은 팀에서 1~2명을 'AI 챔피언'으로 지정 → 월 1회 1시간 사내 데모 세션 운영. 챔피언에게는 Max 라이선스 + 약간의 인센티브(상품권·뱃지)를 제공하면 자발적 활성화가 일어납니다.`,
+    });
+  }
+  if (trainingN >= 3 || avgScore < 50) {
+    accountOps.push({
+      label: '신입 온보딩에 AI 모듈 추가',
+      body: '입사 첫 주에 1시간 AI 활용 입문 세션을 정규 온보딩에 포함하세요. 이후 합류한 인원은 자동으로 사내 평균 활용도 위에서 시작 — 격차 누적을 원천 차단할 수 있습니다.',
+    });
+  }
+  accountOps.push({
+    label: '분기별 재진단 → 데이터 누적',
+    body: '이 진단을 분기마다 같은 형식으로 돌리면 점수·도구·예산이 시계열 데이터로 쌓입니다. 6~12개월 후엔 "어떤 교육이 점수를 몇 점 올렸는지" 정량 측정이 가능해집니다.',
+  });
+
+  // ---------- 마무리 ----------
+  const closing = stage === 'mature'
+    ? '이미 글룩은 AI를 잘 다루는 조직입니다. 이제는 도구 도입을 넘어 AI를 활용한 새로운 업무 방식을 설계할 시점입니다. 임직원분들의 적극적인 참여에 다시 한 번 감사드립니다.'
+    : stage === 'stable' || stage === 'spreading'
+    ? '글룩은 AI 활용에서 좋은 출발점에 있습니다. 핵심 사용자 우선 지원 + 전사 교육 두 축을 병행하면 6개월 내 활용도 평균 15~20점 상승이 기대됩니다. 임직원분들의 정직한 답변 덕분에 명확한 액션 플랜을 세울 수 있게 되었습니다.'
+    : '도입 초기는 가장 중요한 시기입니다. 무리한 일괄 도입보다는 핵심 사용자 1~3명에게 시범 도입 → 사내 사례 만들기 → 점진적 확산 순서가 가장 안전하고 효과적입니다. 글룩의 첫 AI 도입 여정에 함께할 수 있어 영광입니다.';
+
+  return { headline, stage, strengths, weaknesses, shortTerm, midTerm, budget, accountOps, closing, avgScore };
+}
+
 function teamGrade(avg) {
   if (avg >= 80) return { label: 'AI 선도 팀', color: 'text-purple-700 bg-purple-50 border-purple-200',
     comment: '팀원들이 AI를 깊이 있게 활용하고 있는 최상위 팀입니다. Max·고급 도구 도입으로 성과를 한 단계 더 끌어올릴 수 있는 시점이며, 다른 팀에 노하우를 전파하는 사내 워크숍을 권장합니다.' };
@@ -2745,6 +2925,11 @@ function AdminDashboard({ data, source, onRefresh, onDelete, onReset }) {
             </div>
           </div>
         </Section>
+
+        {/* AI 컨설턴트 총평 — 보고서 마무리 카드 */}
+        <FinalAssessmentCard
+          assessment={generateFinalAssessment(data, byTeam, q4Map, tierCounts, paymentMap, amountMap)}
+        />
       </div>
     </div>
   );
@@ -3144,6 +3329,141 @@ function PersonalBurdenList({ data }) {
         💡 ⚠️ 표시된 분들은 <b>월 10만원 이상</b> 자비로 부담 중입니다 — 우선 회사 지원 전환을 검토해주세요.
         "일부 개인" 응답자는 자비 부담분만 회사 결제로 전환하는 것이 가장 효율적입니다.
       </div>
+    </div>
+  );
+}
+
+// 보고서 마지막 — AI 컨설턴트 총평 카드
+function FinalAssessmentCard({ assessment }) {
+  if (!assessment) return null;
+  const { headline, strengths, weaknesses, shortTerm, midTerm, budget, accountOps, closing, avgScore } = assessment;
+
+  return (
+    <section className="print-break">
+      <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white shadow-2xl overflow-hidden print-card border border-slate-700">
+        {/* 헤더 */}
+        <div className="px-6 sm:px-10 py-8 border-b border-white/10 bg-gradient-to-br from-indigo-900/40 via-transparent to-purple-900/30">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-mono font-bold tracking-widest text-indigo-300 uppercase">Final Assessment</span>
+            <span className="text-xs text-slate-400">· AI 컨설턴트 총평</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black leading-snug mb-3">
+            {headline}
+          </h2>
+          <div className="flex items-baseline gap-2 text-sm text-slate-300">
+            <span>전사 평균 활용도</span>
+            <span className="text-2xl font-black text-white tabular-nums">{avgScore}</span>
+            <span className="text-slate-400">/ 100점</span>
+          </div>
+        </div>
+
+        {/* 본문 */}
+        <div className="px-6 sm:px-10 py-8 space-y-7">
+          {/* 강점 */}
+          <AssessSection icon="✅" title="강점" color="text-emerald-300">
+            {strengths.map((s, i) => (
+              <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2">
+                <span className="text-emerald-400 shrink-0">•</span>
+                <span>{s}</span>
+              </li>
+            ))}
+          </AssessSection>
+
+          {/* 약점·리스크 */}
+          {weaknesses.length > 0 && (
+            <AssessSection icon="⚠️" title="약점·리스크" color="text-rose-300">
+              {weaknesses.map((s, i) => (
+                <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2">
+                  <span className="text-rose-400 shrink-0">•</span>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </AssessSection>
+          )}
+
+          {/* 단기 액션 */}
+          <AssessSection icon="⚡" title="단기 액션 (1개월 내)" color="text-amber-300">
+            {shortTerm.map((s, i) => (
+              <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2">
+                <span className="text-amber-400 shrink-0 font-bold">{i + 1}.</span>
+                <span>{s}</span>
+              </li>
+            ))}
+          </AssessSection>
+
+          {/* 중기 액션 */}
+          <AssessSection icon="🎯" title="중기 액션 (3~6개월)" color="text-blue-300">
+            {midTerm.map((s, i) => (
+              <li key={i} className="text-sm text-slate-200 leading-relaxed flex gap-2">
+                <span className="text-blue-400 shrink-0 font-bold">{i + 1}.</span>
+                <span>{s}</span>
+              </li>
+            ))}
+          </AssessSection>
+
+          {/* 예산 권고 */}
+          <div className="rounded-2xl bg-white/5 border border-white/10 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">💰</span>
+              <span className="text-sm font-bold text-purple-300 uppercase tracking-wider">예산 권고</span>
+            </div>
+            <p className="text-sm text-slate-200 leading-relaxed">{budget}</p>
+          </div>
+
+          {/* 노하우 자산화 · 계정/토큰 운영 */}
+          {accountOps && accountOps.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🔐</span>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-cyan-300">
+                  계정·토큰 운영 + 노하우 자산화
+                </h3>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed mb-4 italic">
+                도구만 도입한다고 노하우가 쌓이지 않습니다. 계정·토큰·자산을 함께 설계해야 6개월 뒤 글룩에 진짜 AI 자산이 남습니다.
+              </p>
+              <div className="space-y-3">
+                {accountOps.map((op, i) => (
+                  <div key={i} className="rounded-xl bg-white/5 border border-cyan-500/20 p-4 hover:bg-white/[0.07] transition-colors">
+                    <div className="flex items-start gap-3">
+                      <span className="shrink-0 w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-300 grid place-items-center text-xs font-bold">
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold text-cyan-200 mb-1">{op.label}</div>
+                        <p className="text-xs text-slate-300 leading-relaxed">{op.body}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 마무리 */}
+          <div className="pt-4 border-t border-white/10">
+            <p className="text-sm text-slate-300 leading-relaxed italic">
+              "{closing}"
+            </p>
+            <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+              <div>— 글룩 AI 컨설턴트</div>
+              <div className="font-mono">{new Date().toISOString().slice(0, 10)} 자동 생성</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AssessSection({ icon, title, color, children }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">{icon}</span>
+        <h3 className={`text-sm font-bold uppercase tracking-wider ${color}`}>{title}</h3>
+      </div>
+      <ul className="space-y-2 pl-1">{children}</ul>
     </div>
   );
 }
